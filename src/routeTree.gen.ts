@@ -16,6 +16,7 @@ import { Route as AuthenticatedTurmasRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedPainelRouteImport } from './routes/_authenticated/painel'
 import { Route as AuthenticatedAvaliacoesNovaRouteImport } from './routes/_authenticated/avaliacoes.nova'
 import { Route as AuthenticatedAvaliacoesIdRouteImport } from './routes/_authenticated/avaliacoes.$id'
+import { Route as AuthenticatedAvaliacoesIdFolhaRouteImport } from './routes/_authenticated/avaliacoes.$id.folha'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -53,22 +54,30 @@ const AuthenticatedAvaliacoesIdRoute =
     path: '/avaliacoes/$id',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedAvaliacoesIdFolhaRoute =
+  AuthenticatedAvaliacoesIdFolhaRouteImport.update({
+    id: '/folha',
+    path: '/folha',
+    getParentRoute: () => AuthenticatedAvaliacoesIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/painel': typeof AuthenticatedPainelRoute
   '/turmas': typeof AuthenticatedTurmasRoute
-  '/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRoute
+  '/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRouteWithChildren
   '/avaliacoes/nova': typeof AuthenticatedAvaliacoesNovaRoute
+  '/avaliacoes/$id/folha': typeof AuthenticatedAvaliacoesIdFolhaRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/painel': typeof AuthenticatedPainelRoute
   '/turmas': typeof AuthenticatedTurmasRoute
-  '/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRoute
+  '/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRouteWithChildren
   '/avaliacoes/nova': typeof AuthenticatedAvaliacoesNovaRoute
+  '/avaliacoes/$id/folha': typeof AuthenticatedAvaliacoesIdFolhaRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -77,8 +86,9 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/_authenticated/painel': typeof AuthenticatedPainelRoute
   '/_authenticated/turmas': typeof AuthenticatedTurmasRoute
-  '/_authenticated/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRoute
+  '/_authenticated/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRouteWithChildren
   '/_authenticated/avaliacoes/nova': typeof AuthenticatedAvaliacoesNovaRoute
+  '/_authenticated/avaliacoes/$id/folha': typeof AuthenticatedAvaliacoesIdFolhaRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -89,6 +99,7 @@ export interface FileRouteTypes {
     | '/turmas'
     | '/avaliacoes/$id'
     | '/avaliacoes/nova'
+    | '/avaliacoes/$id/folha'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -97,6 +108,7 @@ export interface FileRouteTypes {
     | '/turmas'
     | '/avaliacoes/$id'
     | '/avaliacoes/nova'
+    | '/avaliacoes/$id/folha'
   id:
     | '__root__'
     | '/'
@@ -106,6 +118,7 @@ export interface FileRouteTypes {
     | '/_authenticated/turmas'
     | '/_authenticated/avaliacoes/$id'
     | '/_authenticated/avaliacoes/nova'
+    | '/_authenticated/avaliacoes/$id/folha'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -165,20 +178,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAvaliacoesIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/avaliacoes/$id/folha': {
+      id: '/_authenticated/avaliacoes/$id/folha'
+      path: '/folha'
+      fullPath: '/avaliacoes/$id/folha'
+      preLoaderRoute: typeof AuthenticatedAvaliacoesIdFolhaRouteImport
+      parentRoute: typeof AuthenticatedAvaliacoesIdRoute
+    }
   }
 }
+
+interface AuthenticatedAvaliacoesIdRouteChildren {
+  AuthenticatedAvaliacoesIdFolhaRoute: typeof AuthenticatedAvaliacoesIdFolhaRoute
+}
+
+const AuthenticatedAvaliacoesIdRouteChildren: AuthenticatedAvaliacoesIdRouteChildren =
+  {
+    AuthenticatedAvaliacoesIdFolhaRoute: AuthenticatedAvaliacoesIdFolhaRoute,
+  }
+
+const AuthenticatedAvaliacoesIdRouteWithChildren =
+  AuthenticatedAvaliacoesIdRoute._addFileChildren(
+    AuthenticatedAvaliacoesIdRouteChildren,
+  )
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedPainelRoute: typeof AuthenticatedPainelRoute
   AuthenticatedTurmasRoute: typeof AuthenticatedTurmasRoute
-  AuthenticatedAvaliacoesIdRoute: typeof AuthenticatedAvaliacoesIdRoute
+  AuthenticatedAvaliacoesIdRoute: typeof AuthenticatedAvaliacoesIdRouteWithChildren
   AuthenticatedAvaliacoesNovaRoute: typeof AuthenticatedAvaliacoesNovaRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedPainelRoute: AuthenticatedPainelRoute,
   AuthenticatedTurmasRoute: AuthenticatedTurmasRoute,
-  AuthenticatedAvaliacoesIdRoute: AuthenticatedAvaliacoesIdRoute,
+  AuthenticatedAvaliacoesIdRoute: AuthenticatedAvaliacoesIdRouteWithChildren,
   AuthenticatedAvaliacoesNovaRoute: AuthenticatedAvaliacoesNovaRoute,
 }
 
