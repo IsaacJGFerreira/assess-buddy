@@ -105,6 +105,88 @@ export type Database = {
           },
         ]
       }
+      digitalizacoes_folhas: {
+        Row: {
+          aluno_id: string | null
+          arquivo_original: string
+          altura_px: number
+          avaliacao_id: string
+          created_at: string
+          folha_id: string | null
+          id: string
+          largura_px: number
+          mime_original: string
+          owner_id: string
+          pagina_origem: number
+          recorte: Json
+          rotacao: number
+          status: string
+          storage_path: string
+          tamanho_bytes: number
+          updated_at: string
+        }
+        Insert: {
+          aluno_id?: string | null
+          arquivo_original: string
+          altura_px: number
+          avaliacao_id: string
+          created_at?: string
+          folha_id?: string | null
+          id?: string
+          largura_px: number
+          mime_original: string
+          owner_id: string
+          pagina_origem?: number
+          recorte: Json
+          rotacao?: number
+          status?: string
+          storage_path: string
+          tamanho_bytes: number
+          updated_at?: string
+        }
+        Update: {
+          aluno_id?: string | null
+          arquivo_original?: string
+          altura_px?: number
+          avaliacao_id?: string
+          created_at?: string
+          folha_id?: string | null
+          id?: string
+          largura_px?: number
+          mime_original?: string
+          owner_id?: string
+          pagina_origem?: number
+          recorte?: Json
+          rotacao?: number
+          status?: string
+          storage_path?: string
+          tamanho_bytes?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "digitalizacoes_folhas_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "alunos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "digitalizacoes_folhas_avaliacao_id_fkey"
+            columns: ["avaliacao_id"]
+            isOneToOne: false
+            referencedRelation: "avaliacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "digitalizacoes_folhas_folha_id_fkey"
+            columns: ["folha_id"]
+            isOneToOne: false
+            referencedRelation: "folhas_respostas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       folhas_respostas: {
         Row: {
           aluno_id: string | null
