@@ -9,38 +9,153 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedTurmasRouteImport } from './routes/_authenticated/turmas'
+import { Route as AuthenticatedPainelRouteImport } from './routes/_authenticated/painel'
+import { Route as AuthenticatedAvaliacoesNovaRouteImport } from './routes/_authenticated/avaliacoes.nova'
+import { Route as AuthenticatedAvaliacoesIdRouteImport } from './routes/_authenticated/avaliacoes.$id'
+import { Route as AuthenticatedAvaliacoesIdFolhaRouteImport } from './routes/_authenticated/avaliacoes.$id.folha'
+import { Route as AuthenticatedAvaliacoesIdDevolutivaAlunoIdRouteImport } from './routes/_authenticated/avaliacoes.$id.devolutiva.$alunoId'
 
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedTurmasRoute = AuthenticatedTurmasRouteImport.update({
+  id: '/turmas',
+  path: '/turmas',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedPainelRoute = AuthenticatedPainelRouteImport.update({
+  id: '/painel',
+  path: '/painel',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAvaliacoesNovaRoute =
+  AuthenticatedAvaliacoesNovaRouteImport.update({
+    id: '/avaliacoes/nova',
+    path: '/avaliacoes/nova',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAvaliacoesIdRoute =
+  AuthenticatedAvaliacoesIdRouteImport.update({
+    id: '/avaliacoes/$id',
+    path: '/avaliacoes/$id',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAvaliacoesIdFolhaRoute =
+  AuthenticatedAvaliacoesIdFolhaRouteImport.update({
+    id: '/folha',
+    path: '/folha',
+    getParentRoute: () => AuthenticatedAvaliacoesIdRoute,
+  } as any)
+const AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute =
+  AuthenticatedAvaliacoesIdDevolutivaAlunoIdRouteImport.update({
+    id: '/devolutiva/$alunoId',
+    path: '/devolutiva/$alunoId',
+    getParentRoute: () => AuthenticatedAvaliacoesIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/painel': typeof AuthenticatedPainelRoute
+  '/turmas': typeof AuthenticatedTurmasRoute
+  '/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRouteWithChildren
+  '/avaliacoes/nova': typeof AuthenticatedAvaliacoesNovaRoute
+  '/avaliacoes/$id/folha': typeof AuthenticatedAvaliacoesIdFolhaRoute
+  '/avaliacoes/$id/devolutiva/$alunoId': typeof AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/painel': typeof AuthenticatedPainelRoute
+  '/turmas': typeof AuthenticatedTurmasRoute
+  '/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRouteWithChildren
+  '/avaliacoes/nova': typeof AuthenticatedAvaliacoesNovaRoute
+  '/avaliacoes/$id/folha': typeof AuthenticatedAvaliacoesIdFolhaRoute
+  '/avaliacoes/$id/devolutiva/$alunoId': typeof AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/auth': typeof AuthRoute
+  '/_authenticated/painel': typeof AuthenticatedPainelRoute
+  '/_authenticated/turmas': typeof AuthenticatedTurmasRoute
+  '/_authenticated/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRouteWithChildren
+  '/_authenticated/avaliacoes/nova': typeof AuthenticatedAvaliacoesNovaRoute
+  '/_authenticated/avaliacoes/$id/folha': typeof AuthenticatedAvaliacoesIdFolhaRoute
+  '/_authenticated/avaliacoes/$id/devolutiva/$alunoId': typeof AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/painel'
+    | '/turmas'
+    | '/avaliacoes/$id'
+    | '/avaliacoes/nova'
+    | '/avaliacoes/$id/folha'
+    | '/avaliacoes/$id/devolutiva/$alunoId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/auth'
+    | '/painel'
+    | '/turmas'
+    | '/avaliacoes/$id'
+    | '/avaliacoes/nova'
+    | '/avaliacoes/$id/folha'
+    | '/avaliacoes/$id/devolutiva/$alunoId'
+  id:
+    | '__root__'
+    | '/'
+    | '/_authenticated'
+    | '/auth'
+    | '/_authenticated/painel'
+    | '/_authenticated/turmas'
+    | '/_authenticated/avaliacoes/$id'
+    | '/_authenticated/avaliacoes/nova'
+    | '/_authenticated/avaliacoes/$id/folha'
+    | '/_authenticated/avaliacoes/$id/devolutiva/$alunoId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  AuthRoute: typeof AuthRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,22 +163,90 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/turmas': {
+      id: '/_authenticated/turmas'
+      path: '/turmas'
+      fullPath: '/turmas'
+      preLoaderRoute: typeof AuthenticatedTurmasRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/painel': {
+      id: '/_authenticated/painel'
+      path: '/painel'
+      fullPath: '/painel'
+      preLoaderRoute: typeof AuthenticatedPainelRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/avaliacoes/nova': {
+      id: '/_authenticated/avaliacoes/nova'
+      path: '/avaliacoes/nova'
+      fullPath: '/avaliacoes/nova'
+      preLoaderRoute: typeof AuthenticatedAvaliacoesNovaRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/avaliacoes/$id': {
+      id: '/_authenticated/avaliacoes/$id'
+      path: '/avaliacoes/$id'
+      fullPath: '/avaliacoes/$id'
+      preLoaderRoute: typeof AuthenticatedAvaliacoesIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/avaliacoes/$id/folha': {
+      id: '/_authenticated/avaliacoes/$id/folha'
+      path: '/folha'
+      fullPath: '/avaliacoes/$id/folha'
+      preLoaderRoute: typeof AuthenticatedAvaliacoesIdFolhaRouteImport
+      parentRoute: typeof AuthenticatedAvaliacoesIdRoute
+    }
+    '/_authenticated/avaliacoes/$id/devolutiva/$alunoId': {
+      id: '/_authenticated/avaliacoes/$id/devolutiva/$alunoId'
+      path: '/devolutiva/$alunoId'
+      fullPath: '/avaliacoes/$id/devolutiva/$alunoId'
+      preLoaderRoute: typeof AuthenticatedAvaliacoesIdDevolutivaAlunoIdRouteImport
+      parentRoute: typeof AuthenticatedAvaliacoesIdRoute
+    }
   }
 }
 
+interface AuthenticatedAvaliacoesIdRouteChildren {
+  AuthenticatedAvaliacoesIdFolhaRoute: typeof AuthenticatedAvaliacoesIdFolhaRoute
+  AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute: typeof AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute
+}
+
+const AuthenticatedAvaliacoesIdRouteChildren: AuthenticatedAvaliacoesIdRouteChildren =
+  {
+    AuthenticatedAvaliacoesIdFolhaRoute: AuthenticatedAvaliacoesIdFolhaRoute,
+    AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute:
+      AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute,
+  }
+
+const AuthenticatedAvaliacoesIdRouteWithChildren =
+  AuthenticatedAvaliacoesIdRoute._addFileChildren(
+    AuthenticatedAvaliacoesIdRouteChildren,
+  )
+
+interface AuthenticatedRouteRouteChildren {
+  AuthenticatedPainelRoute: typeof AuthenticatedPainelRoute
+  AuthenticatedTurmasRoute: typeof AuthenticatedTurmasRoute
+  AuthenticatedAvaliacoesIdRoute: typeof AuthenticatedAvaliacoesIdRouteWithChildren
+  AuthenticatedAvaliacoesNovaRoute: typeof AuthenticatedAvaliacoesNovaRoute
+}
+
+const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedPainelRoute: AuthenticatedPainelRoute,
+  AuthenticatedTurmasRoute: AuthenticatedTurmasRoute,
+  AuthenticatedAvaliacoesIdRoute: AuthenticatedAvaliacoesIdRouteWithChildren,
+  AuthenticatedAvaliacoesNovaRoute: AuthenticatedAvaliacoesNovaRoute,
+}
+
+const AuthenticatedRouteRouteWithChildren =
+  AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AuthRoute: AuthRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
