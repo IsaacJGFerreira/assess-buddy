@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedTurmasRouteImport } from './routes/_authenticated/turmas'
 import { Route as AuthenticatedPainelRouteImport } from './routes/_authenticated/painel'
 import { Route as AuthenticatedAvaliacoesNovaRouteImport } from './routes/_authenticated/avaliacoes.nova'
+import { Route as AuthenticatedAvaliacoesIdRouteImport } from './routes/_authenticated/avaliacoes.$id'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -46,12 +47,19 @@ const AuthenticatedAvaliacoesNovaRoute =
     path: '/avaliacoes/nova',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedAvaliacoesIdRoute =
+  AuthenticatedAvaliacoesIdRouteImport.update({
+    id: '/avaliacoes/$id',
+    path: '/avaliacoes/$id',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/painel': typeof AuthenticatedPainelRoute
   '/turmas': typeof AuthenticatedTurmasRoute
+  '/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRoute
   '/avaliacoes/nova': typeof AuthenticatedAvaliacoesNovaRoute
 }
 export interface FileRoutesByTo {
@@ -59,6 +67,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/painel': typeof AuthenticatedPainelRoute
   '/turmas': typeof AuthenticatedTurmasRoute
+  '/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRoute
   '/avaliacoes/nova': typeof AuthenticatedAvaliacoesNovaRoute
 }
 export interface FileRoutesById {
@@ -68,13 +77,26 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/_authenticated/painel': typeof AuthenticatedPainelRoute
   '/_authenticated/turmas': typeof AuthenticatedTurmasRoute
+  '/_authenticated/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRoute
   '/_authenticated/avaliacoes/nova': typeof AuthenticatedAvaliacoesNovaRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/painel' | '/turmas' | '/avaliacoes/nova'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/painel'
+    | '/turmas'
+    | '/avaliacoes/$id'
+    | '/avaliacoes/nova'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/painel' | '/turmas' | '/avaliacoes/nova'
+  to:
+    | '/'
+    | '/auth'
+    | '/painel'
+    | '/turmas'
+    | '/avaliacoes/$id'
+    | '/avaliacoes/nova'
   id:
     | '__root__'
     | '/'
@@ -82,6 +104,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/_authenticated/painel'
     | '/_authenticated/turmas'
+    | '/_authenticated/avaliacoes/$id'
     | '/_authenticated/avaliacoes/nova'
   fileRoutesById: FileRoutesById
 }
@@ -135,18 +158,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAvaliacoesNovaRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/avaliacoes/$id': {
+      id: '/_authenticated/avaliacoes/$id'
+      path: '/avaliacoes/$id'
+      fullPath: '/avaliacoes/$id'
+      preLoaderRoute: typeof AuthenticatedAvaliacoesIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedPainelRoute: typeof AuthenticatedPainelRoute
   AuthenticatedTurmasRoute: typeof AuthenticatedTurmasRoute
+  AuthenticatedAvaliacoesIdRoute: typeof AuthenticatedAvaliacoesIdRoute
   AuthenticatedAvaliacoesNovaRoute: typeof AuthenticatedAvaliacoesNovaRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedPainelRoute: AuthenticatedPainelRoute,
   AuthenticatedTurmasRoute: AuthenticatedTurmasRoute,
+  AuthenticatedAvaliacoesIdRoute: AuthenticatedAvaliacoesIdRoute,
   AuthenticatedAvaliacoesNovaRoute: AuthenticatedAvaliacoesNovaRoute,
 }
 
