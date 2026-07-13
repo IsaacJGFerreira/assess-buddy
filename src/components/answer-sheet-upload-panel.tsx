@@ -284,8 +284,8 @@ export function AnswerSheetUploadPanel({
 
       {migrationPending && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          A estrutura de upload ainda precisa ser aplicada ao banco. O editor pode ser testado, mas
-          o salvamento ficará disponível após a atualização deste PR.
+          O banco conectado ainda não recebeu a migration de digitalizações. O enquadramento pode
+          ser testado, mas o arquivo só será salvo após aplicar as migrations de upload e leitura.
         </div>
       )}
 
@@ -377,11 +377,14 @@ export function AnswerSheetUploadPanel({
                 onCropChange={setCrop}
                 onCropComplete={(_area, pixels) => setCropPixels(pixels)}
                 onZoomChange={setZoom}
-                onMediaLoaded={(media: MediaSize) =>
-                  setSourceAspect(media.naturalWidth / media.naturalHeight)
-                }
+                onMediaLoaded={(media: MediaSize) => {
+                  const aspect = media.naturalWidth / media.naturalHeight;
+                  setSourceAspect(aspect);
+                  setCropFormat(aspect >= 1 ? "a4-landscape" : "a4-portrait");
+                }}
                 objectFit="contain"
-                showGrid
+                showGrid={false}
+                classes={{ cropAreaClassName: "answer-sheet-alignment-crop" }}
                 zoomWithScroll
                 minZoom={1}
                 maxZoom={3}
@@ -392,6 +395,11 @@ export function AnswerSheetUploadPanel({
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white">
                 <Loader2 className="h-7 w-7 animate-spin" />
                 <span className="text-sm">Preparando visualização…</span>
+              </div>
+            )}
+            {source && !loadingSource && (
+              <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full border border-cyan-200/70 bg-slate-950/85 px-3 py-1.5 text-center text-xs font-medium text-white shadow">
+                Mantenha os quatro quadrados pretos dentro do quadro azul
               </div>
             )}
           </div>
@@ -416,7 +424,7 @@ export function AnswerSheetUploadPanel({
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="mr-1 flex items-center gap-2 text-sm font-medium">
-                  <Crop className="h-4 w-4" /> Formato
+                  <Crop className="h-4 w-4" /> Quadro de leitura
                 </span>
                 <CropFormatButton
                   active={cropFormat === "original"}
@@ -463,10 +471,16 @@ export function AnswerSheetUploadPanel({
               <Button
                 type="button"
                 className="w-full lg:w-auto"
-                onClick={() => upload.mutate()}
-                disabled={
-                  !source || !cropPixels || loadingSource || upload.isPending || migrationPending
-                }
+                onClick={() => {
+                  if (migrationPending) {
+                    toast.error(
+                      "Aplique as migrations de digitalizações no Supabase antes de salvar.",
+                    );
+                    return;
+                  }
+                  upload.mutate();
+                }}
+                disabled={!source || !cropPixels || loadingSource || upload.isPending}
               >
                 {upload.isPending ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -478,8 +492,9 @@ export function AnswerSheetUploadPanel({
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            Mantenha toda a folha dentro do quadro. A imagem é convertida para PNG e guardada de
-            forma privada nesta avaliação.
+            O quadro A4 é escolhido automaticamente. Arraste e use o zoom apenas se algum dos quatro
+            marcadores ficar fora dele. A imagem é convertida para PNG e guardada de forma privada
+            nesta avaliação.
           </p>
         </div>
       )}
