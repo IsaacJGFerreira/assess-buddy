@@ -8,7 +8,6 @@ import {
   CircleAlert,
   Eye,
   FileScan,
-  ListChecks,
   Loader2,
   Save,
   ScanLine,
@@ -82,8 +81,6 @@ export function AnswerSheetMarkReader({
   } | null>(() => restoreSavedMeta(scan.resultado_leitura));
   const [overlay, setOverlay] = useState<string | null>(null);
   const [evidenceByQuestion, setEvidenceByQuestion] = useState<Record<string, string>>({});
-  const [reviewView, setReviewView] = useState<"pending" | "all">("pending");
-  const [pendingIndex, setPendingIndex] = useState(0);
   const [hasUnsavedReview, setHasUnsavedReview] = useState(false);
 
   const models = useQuery({
@@ -142,7 +139,6 @@ export function AnswerSheetMarkReader({
 
   const analyze = useMutation({
     mutationFn: async () => {
-      if (!studentId) throw new Error("Selecione o aluno antes de analisar a folha.");
       if (!selectedModel || !restored || restored instanceof Error) {
         throw restored instanceof Error ? restored : new Error("Selecione uma versão da folha.");
       }
@@ -190,8 +186,6 @@ export function AnswerSheetMarkReader({
       });
       setOverlay(nextOverlay);
       setEvidenceByQuestion(evidence);
-      setPendingIndex(0);
-      setReviewView("pending");
       setHasUnsavedReview(false);
       reviewRevisionRef.current = 0;
       await queryClient.invalidateQueries({ queryKey: ["answer-sheet-scans", avaliacao.id] });
@@ -220,7 +214,7 @@ export function AnswerSheetMarkReader({
       reviewedReadings: OmrQuestionReading[];
       revision: number;
     }) => {
-      if (!studentId || !selectedModel || !analysisMeta) {
+      if (!selectedModel || !analysisMeta) {
         throw new Error("A leitura precisa estar completa antes de salvar a conferência.");
       }
       const payload = buildReadingPayload(reviewedReadings, {
@@ -258,7 +252,7 @@ export function AnswerSheetMarkReader({
   });
   const confirm = useMutation({
     mutationFn: async () => {
-      if (!studentId || !selectedModel || !analysisMeta || readings.length === 0) {
+      if (!selectedModel || !analysisMeta || readings.length === 0) {
         throw new Error("Faça a leitura automática antes de confirmar as respostas.");
       }
       if (unresolved.length > 0) {
@@ -280,7 +274,11 @@ export function AnswerSheetMarkReader({
       });
     },
     onSuccess: async () => {
-      toast.success("Respostas confirmadas e lançadas para o aluno.");
+      toast.success(
+        studentId
+          ? "Respostas confirmadas e lançadas para o aluno."
+          : "Leitura confirmada sem aluno vinculado.",
+      );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["answer-sheet-scans", avaliacao.id] }),
         queryClient.invalidateQueries({ queryKey: ["respostas", avaliacao.id] }),
@@ -311,7 +309,6 @@ export function AnswerSheetMarkReader({
     setAnalysisMeta(null);
     setOverlay(null);
     setEvidenceByQuestion({});
-    setPendingIndex(0);
     setHasUnsavedReview(false);
     reviewRevisionRef.current = 0;
   }
@@ -374,11 +371,6 @@ export function AnswerSheetMarkReader({
   const incompleteCount = unresolved.filter(
     (reading) => reading.reviewReason === "incomplete",
   ).length;
-  const currentPendingIndex = Math.min(pendingIndex, Math.max(0, unresolved.length - 1));
-  const currentPending = unresolved[currentPendingIndex] ?? null;
-  const currentPendingQuestion = currentPending
-    ? (questionsById.get(currentPending.questionId) ?? null)
-    : null;
 
   return (
     <section className="space-y-5 rounded-lg border border-border bg-card p-5">
@@ -397,7 +389,7 @@ export function AnswerSheetMarkReader({
             <ScanLine className="h-5 w-5" /> Leitura automática das marcações
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {scan.arquivo_original} · selecione a versão, a página e o aluno antes de analisar.
+            {scan.arquivo_original} · selecione a versão e a página. O aluno é opcional.
           </p>
         </div>
         {analysisMeta && (
@@ -411,16 +403,16 @@ export function AnswerSheetMarkReader({
         <div className="space-y-1.5">
           <Label>Aluno</Label>
           <Select
-            value={studentId}
+            value={studentId || "__unlinked__"}
             onValueChange={(value) => {
-              setStudentId(value);
-              clearAnalysis();
+              setStudentId(value === "__unlinked__" ? "" : value);
             }}
           >
             <SelectTrigger>
               <SelectValue placeholder="Selecione o aluno" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="__unlinked__">Sem aluno vinculado</SelectItem>
               {alunos.map((student) => (
                 <SelectItem key={student.id} value={student.id}>
                   {student.chamada ? `${student.chamada}. ` : ""}
@@ -464,7 +456,8 @@ export function AnswerSheetMarkReader({
 
       {!alunos.length && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Cadastre alunos na turma da avaliação antes de lançar as respostas lidas.
+          Você pode ler e confirmar a folha sem aluno. Cadastre alunos apenas quando quiser lançar
+          as respostas individualmente.
         </div>
       )}
 
@@ -472,7 +465,7 @@ export function AnswerSheetMarkReader({
         <Button
           type="button"
           onClick={() => analyze.mutate()}
-          disabled={!studentId || !selectedModelId || analyze.isPending || pages.length === 0}
+          disabled={!selectedModelId || analyze.isPending || pages.length === 0}
         >
           {analyze.isPending ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -533,24 +526,7 @@ export function AnswerSheetMarkReader({
           )}
 
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="inline-flex rounded-lg border border-border bg-muted/30 p-1">
-              <Button
-                type="button"
-                size="sm"
-                variant={reviewView === "pending" ? "secondary" : "ghost"}
-                onClick={() => setReviewView("pending")}
-              >
-                <ListChecks className="mr-2 h-4 w-4" /> Pendências ({unresolved.length})
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={reviewView === "all" ? "secondary" : "ghost"}
-                onClick={() => setReviewView("all")}
-              >
-                Todas ({readings.length})
-              </Button>
-            </div>
+            <div className="text-sm font-medium">Todas as respostas ({readings.length})</div>
             <Button
               type="button"
               variant="outline"
@@ -571,53 +547,28 @@ export function AnswerSheetMarkReader({
             </Button>
           </div>
 
-          {reviewView === "pending" ? (
-            currentPending && currentPendingQuestion && analysisMeta ? (
-              <UncertainReadingReview
-                reading={currentPending}
-                question={currentPendingQuestion}
-                evidence={evidenceByQuestion[currentPending.questionId]}
-                threshold={analysisMeta.threshold}
-                index={currentPendingIndex}
-                total={unresolved.length}
-                onPrevious={() => setPendingIndex((value) => Math.max(0, value - 1))}
-                onNext={() =>
-                  setPendingIndex((value) => Math.min(unresolved.length - 1, value + 1))
-                }
-                onChange={(value, resolved) =>
-                  reviewReading(currentPending.questionId, value, resolved)
-                }
-              />
-            ) : (
-              <div className="flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
-                <CheckCircle2 className="h-5 w-5 shrink-0" />
-                Todas as respostas duvidosas foram conferidas.
-              </div>
-            )
-          ) : (
-            <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
-              {readings.map((reading) => {
-                const question = questionsById.get(reading.questionId);
-                if (!question) return null;
-                return (
-                  <ReadingReviewRow
-                    key={reading.questionId}
-                    question={question}
-                    reading={reading}
-                    onChange={(value, resolved) =>
-                      reviewReading(reading.questionId, value, resolved)
-                    }
-                  />
-                );
-              })}
-            </div>
-          )}
+          <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+            {readings.map((reading) => {
+              const question = questionsById.get(reading.questionId);
+              if (!question) return null;
+              return (
+                <ReadingReviewRow
+                  key={reading.questionId}
+                  question={question}
+                  reading={reading}
+                  onChange={(value, resolved) => reviewReading(reading.questionId, value, resolved)}
+                />
+              );
+            })}
+          </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-4">
             <div>
               <div className="font-medium">Confirmar lançamento</div>
               <p className="text-xs text-muted-foreground">
-                As respostas desta página substituirão os valores atuais do aluno selecionado.
+                {studentId
+                  ? "As respostas desta página substituirão os valores atuais do aluno selecionado."
+                  : "A leitura será salva sem lançar respostas para um aluno."}
               </p>
             </div>
             <Button
@@ -625,7 +576,9 @@ export function AnswerSheetMarkReader({
               onClick={() => {
                 if (
                   window.confirm(
-                    "Confirmar e lançar as respostas desta página para o aluno selecionado?",
+                    studentId
+                      ? "Confirmar e lançar as respostas desta página para o aluno selecionado?"
+                      : "Confirmar esta leitura sem vincular um aluno?",
                   )
                 ) {
                   confirm.mutate();
@@ -638,7 +591,7 @@ export function AnswerSheetMarkReader({
               ) : (
                 <CheckCircle2 className="mr-2 h-4 w-4" />
               )}
-              Confirmar respostas
+              {studentId ? "Confirmar respostas" : "Confirmar sem aluno"}
             </Button>
           </div>
         </>
@@ -812,7 +765,16 @@ function ReadingReviewRow({
       className={`grid gap-3 px-4 py-3 sm:grid-cols-[70px_1fr_150px] sm:items-center ${needsReview ? "bg-amber-50" : "bg-card"}`}
     >
       <div>
-        <div className="font-semibold">Questão {question.numero}</div>
+        <div className="flex items-center gap-2 font-semibold">
+          {needsReview && (
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500"
+              title="Leitura com inconsistência"
+              aria-label="Leitura com inconsistência"
+            />
+          )}
+          Questão {question.numero}
+        </div>
         <div className="text-[11px] text-muted-foreground">{formatPercent(reading.confidence)}</div>
       </div>
       <ReadingAnswerControl question={question} reading={reading} onChange={onChange} />
