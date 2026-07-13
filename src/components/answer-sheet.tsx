@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { QRCodeSVG } from "qrcode.react";
 
 import { alternativas, type Aluno, type Avaliacao, type Questao } from "@/lib/domain";
 import type { AnswerSheetLayout } from "@/lib/answer-sheet-layout";
@@ -8,13 +9,26 @@ interface AnswerSheetProps {
   questoes: Questao[];
   aluno?: Aluno | null;
   layout: AnswerSheetLayout;
+  identification?: AnswerSheetIdentification | null;
+}
+
+export interface AnswerSheetIdentification {
+  code: string;
+  version: number;
+  qrPayload: string;
 }
 
 type SheetPage =
   | { kind: "main"; questions: Questao[]; numericQuestions: Questao[] }
   | { kind: "numeric"; questions: Questao[]; numericQuestions: Questao[] };
 
-export function AnswerSheet({ avaliacao, questoes, aluno, layout }: AnswerSheetProps) {
+export function AnswerSheet({
+  avaliacao,
+  questoes,
+  aluno,
+  layout,
+  identification,
+}: AnswerSheetProps) {
   const pages = buildPages(questoes, layout);
 
   return (
@@ -25,6 +39,7 @@ export function AnswerSheet({ avaliacao, questoes, aluno, layout }: AnswerSheetP
           avaliacao={avaliacao}
           aluno={aluno}
           layout={layout}
+          identification={identification}
           page={page}
           pageNumber={index + 1}
           pageCount={pages.length}
@@ -60,6 +75,7 @@ function AnswerSheetPage({
   avaliacao,
   aluno,
   layout,
+  identification,
   page,
   pageNumber,
   pageCount,
@@ -67,6 +83,7 @@ function AnswerSheetPage({
   avaliacao: Avaliacao;
   aluno?: Aluno | null;
   layout: AnswerSheetLayout;
+  identification?: AnswerSheetIdentification | null;
   page: SheetPage;
   pageNumber: number;
   pageCount: number;
@@ -100,11 +117,27 @@ function AnswerSheetPage({
             {` · Valor ${avaliacao.valor_total}`}
           </p>
         </div>
-        <div className="answer-sheet-code">
-          <span>Código da folha</span>
-          <strong>
-            {avaliacao.id.slice(0, 8).toUpperCase()}-{pageNumber}
-          </strong>
+        <div className={`answer-sheet-code ${identification ? "has-qr-code" : ""}`}>
+          {identification && (
+            <QRCodeSVG
+              className="answer-sheet-qr-code"
+              value={`${identification.qrPayload}|V${identification.version}|P${pageNumber}`}
+              size={64}
+              level="M"
+              bgColor="#ffffff"
+              fgColor="#111111"
+              title={`Folha ${identification.code}, versão ${identification.version}, página ${pageNumber}`}
+            />
+          )}
+          <div className="answer-sheet-code-text">
+            <span>Código da folha</span>
+            <strong>
+              {identification?.code ?? avaliacao.id.slice(0, 8).toUpperCase()}
+            </strong>
+            <small>
+              {identification ? `Versão ${identification.version} · ` : ""}Página {pageNumber}
+            </small>
+          </div>
         </div>
       </header>
 

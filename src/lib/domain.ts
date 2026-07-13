@@ -1,4 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
+import type { AnswerSheetLayout, AnswerSheetOrientation } from "@/lib/answer-sheet-layout";
 
 export type TipoQuestao = "mc" | "ce" | "num";
 export type StatusAvaliacao =
@@ -71,6 +73,25 @@ export interface Resposta {
   resposta: string | null;
 }
 
+export interface ModeloFolhaResposta {
+  id: string;
+  avaliacao_id: string;
+  versao: number;
+  colunas: number;
+  linhas_por_coluna: number;
+  orientacao: AnswerSheetOrientation;
+  snapshot: Json;
+  created_at: string;
+}
+
+export interface IdentificacaoFolhaResposta {
+  modeloId: string;
+  versao: number;
+  folhaId: string;
+  codigo: string;
+  qrPayload: string;
+}
+
 // ---------- Fetchers ----------
 export async function listTurmas(): Promise<Turma[]> {
   const { data, error } = await supabase.from("turmas").select("*").order("nome");
@@ -120,6 +141,74 @@ export async function listRespostasByAvaliacao(avaliacaoId: string): Promise<Res
     .eq("avaliacao_id", avaliacaoId);
   if (error) throw error;
   return data as Resposta[];
+}
+
+export async function getLatestAnswerSheetModel(
+  avaliacaoId: string,
+): Promise<ModeloFolhaResposta | null> {
+  const { data, error } = await supabase
+    .from("modelos_folha_respostas")
+    .select("*")
+    .eq("avaliacao_id", avaliacaoId)
+    .order("versao", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data as ModeloFolhaResposta | null;
+}
+
+export async function createOrGetAnswerSheet({
+  avaliacao,
+  questoes,
+  alunoId,
+  layout,
+}: {
+  avaliacao: Avaliacao;
+  questoes: Questao[];
+  alunoId?: string;
+  layout: AnswerSheetLayout;
+}): Promise<IdentificacaoFolhaResposta> {
+  const snapshot: Json = {
+    schemaVersion: 1,
+    avaliacao: {
+      id: avaliacao.id,
+      titulo: avaliacao.titulo,
+      disciplina: avaliacao.disciplina,
+      turmaId: avaliacao.turma_id,
+      dataAplicacao: avaliacao.data_aplicacao,
+      valorTotal: Number(avaliacao.valor_total),
+      instrucoes: avaliacao.instrucoes,
+    },
+    questoes: questoes.map((questao) => ({
+      id: questao.id,
+      numero: questao.numero,
+      tipo: questao.tipo,
+      qtdAlternativas: questao.qtd_alternativas,
+      numDigitos: questao.num_digitos,
+      gabarito: questao.gabarito,
+      valor: Number(questao.valor),
+      anulada: questao.anulada,
+      conteudo: questao.conteudo,
+    })),
+  };
+  const { data, error } = await supabase.rpc("criar_ou_obter_folha_respostas", {
+    p_avaliacao_id: avaliacao.id,
+    p_aluno_id: alunoId ?? null,
+    p_colunas: layout.columns,
+    p_linhas_por_coluna: layout.rowsPerColumn,
+    p_orientacao: layout.orientation,
+    p_snapshot: snapshot,
+  });
+  if (error) throw error;
+  const result = data?.[0];
+  if (!result) throw new Error("Não foi possível identificar a folha de respostas.");
+  return {
+    modeloId: result.modelo_id,
+    versao: result.versao,
+    folhaId: result.folha_id,
+    codigo: result.codigo,
+    qrPayload: result.qr_payload,
+  };
 }
 
 // ---------- Scoring ----------
