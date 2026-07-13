@@ -82,9 +82,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "Folha — Correção de avaliações" },
       { name: "description", content: "Crie folhas de resposta, aplique provas, corrija automaticamente e devolva a análise ao aluno." },
       { property: "og:title", content: "Folha — Correção de avaliações" },
-      { property: "og:description", content: "Sistema completo para professores criarem folhas de respostas, corrigirem provas e gerarem devolutivas formativas." },
+      { property: "og:description", content: "Crie folhas de resposta, aplique provas, corrija automaticamente e devolva a análise ao aluno." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Folha — Correção de avaliações" },
+      { name: "twitter:description", content: "Crie folhas de resposta, aplique provas, corrija automaticamente e devolva a análise ao aluno." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/26a3567c-2893-481b-9c8b-ac6b855f027b/id-preview-391f3498--b213adce-d778-475c-8076-9c6aa7b2df0a.lovable.app-1783974493203.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/26a3567c-2893-481b-9c8b-ac6b855f027b/id-preview-391f3498--b213adce-d778-475c-8076-9c6aa7b2df0a.lovable.app-1783974493203.png" },
     ],
     links: [
       {
