@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -275,6 +275,7 @@ function GabaritoTab({ avaliacaoId }: { avaliacaoId: string }) {
 
 // ================= FOLHA =================
 function FolhaTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: string | null }) {
+  const navigate = useNavigate();
   const [orientation, setOrientation] = useState<AnswerSheetOrientation>(DEFAULT_ANSWER_SHEET_LAYOUT.orientation);
   const [columns, setColumns] = useState(DEFAULT_ANSWER_SHEET_LAYOUT.columns);
   const [rowsPerColumn, setRowsPerColumn] = useState(DEFAULT_ANSWER_SHEET_LAYOUT.rowsPerColumn);
@@ -293,6 +294,19 @@ function FolhaTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: stri
   function changeOrientation(value: AnswerSheetOrientation) {
     setOrientation(value);
     if (value === "portrait" && columns > 4) setColumns(4);
+  }
+
+  async function openAnswerSheet(aluno?: string) {
+    try {
+      await navigate({
+        to: "/avaliacoes/$id/folha",
+        params: { id: avaliacaoId },
+        search: aluno ? { ...sheetSearch, aluno } : sheetSearch,
+      });
+    } catch (error) {
+      console.error(error);
+      toast.error("Não foi possível abrir a folha de respostas.");
+    }
   }
 
   return (
@@ -345,14 +359,8 @@ function FolhaTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: stri
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
-          <Button asChild>
-            <Link
-              to="/avaliacoes/$id/folha"
-              params={{ id: avaliacaoId }}
-              search={sheetSearch}
-            >
-              <FileText className="h-4 w-4 mr-2" />Visualizar folha genérica
-            </Link>
+          <Button type="button" onClick={() => void openAnswerSheet()}>
+            <FileText className="h-4 w-4 mr-2" />Visualizar folha genérica
           </Button>
           <span className="text-xs text-muted-foreground">
             Capacidade de {sheetSearch.colunas * rowsPerColumn} questões por página.
@@ -364,15 +372,14 @@ function FolhaTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: stri
           <h3 className="font-semibold mb-3">Folhas personalizadas por aluno</h3>
           <div className="grid gap-2 md:grid-cols-2">
             {alunos.data!.map(a => (
-              <Link
+              <button
                 key={a.id}
-                to="/avaliacoes/$id/folha"
-                params={{ id: avaliacaoId }}
-                search={{ ...sheetSearch, aluno: a.id }}
+                type="button"
+                onClick={() => void openAnswerSheet(a.id)}
                 className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm hover:bg-muted/50">
                 <span>{a.chamada ? `${a.chamada}. ` : ""}{a.nome}</span>
                 <Printer className="h-4 w-4 text-muted-foreground" />
-              </Link>
+              </button>
             ))}
           </div>
         </div>
