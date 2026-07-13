@@ -92,6 +92,38 @@ export interface IdentificacaoFolhaResposta {
   qrPayload: string;
 }
 
+export interface DigitalizacaoFolha {
+  id: string;
+  owner_id: string;
+  avaliacao_id: string;
+  folha_id: string | null;
+  aluno_id: string | null;
+  arquivo_original: string;
+  mime_original: "image/jpeg" | "image/png" | "application/pdf";
+  pagina_origem: number;
+  rotacao: number;
+  recorte: Json;
+  storage_path: string;
+  largura_px: number;
+  altura_px: number;
+  tamanho_bytes: number;
+  status: "preparada" | "identificada" | "revisao" | "processada" | "erro";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UploadDigitalizacaoFolhaInput {
+  avaliacaoId: string;
+  arquivoOriginal: string;
+  mimeOriginal: DigitalizacaoFolha["mime_original"];
+  paginaOrigem: number;
+  rotacao: number;
+  recorte: Json;
+  imagem: Blob;
+  larguraPx: number;
+  alturaPx: number;
+}
+
 const ANSWER_SHEET_SCHEMA_ERROR_CODES = new Set([
   "42P01",
   "42883",
@@ -113,6 +145,7 @@ export function isAnswerSheetPersistenceUnavailable(error: unknown): boolean {
       message.includes("criar_ou_obter_folha_respostas")
       || message.includes("modelos_folha_respostas")
       || message.includes("folhas_respostas")
+      || message.includes("digitalizacoes_folhas")
     ));
 }
 
@@ -233,6 +266,78 @@ export async function createOrGetAnswerSheet({
     codigo: result.codigo,
     qrPayload: result.qr_payload,
   };
+}
+
+export async function listAnswerSheetScans(
+  avaliacaoId: string,
+): Promise<DigitalizacaoFolha[]> {
+  const { data, error } = await supabase
+    .from("digitalizacoes_folhas")
+    .select("*")
+    .eq("avaliacao_id", avaliacaoId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data as DigitalizacaoFolha[];
+}
+
+export async function uploadAnswerSheetScan(
+  input: UploadDigitalizacaoFolhaInput,
+): Promise<DigitalizacaoFolha> {
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError) throw authError;
+  if (!authData.user) throw new Error("Sua sessão expirou. Entre novamente para continuar.");
+
+  const id = crypto.randomUUID();
+  const storagePath = `${authData.user.id}/${input.avaliacaoId}/${id}.png`;
+  const { error: uploadError } = await supabase.storage
+    .from("folhas-digitalizadas")
+    .upload(storagePath, input.imagem, {
+      cacheControl: "3600",
+      contentType: "image/png",
+      upsert: false,
+    });
+  if (uploadError) throw uploadError;
+
+  const { data, error } = await supabase
+    .from("digitalizacoes_folhas")
+    .insert({
+      id,
+      owner_id: authData.user.id,
+      avaliacao_id: input.avaliacaoId,
+      arquivo_original: input.arquivoOriginal,
+      mime_original: input.mimeOriginal,
+      pagina_origem: input.paginaOrigem,
+      rotacao: input.rotacao,
+      recorte: input.recorte,
+      storage_path: storagePath,
+      largura_px: input.larguraPx,
+      altura_px: input.alturaPx,
+      tamanho_bytes: input.imagem.size,
+      status: "preparada",
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    await supabase.storage.from("folhas-digitalizadas").remove([storagePath]);
+    throw error;
+  }
+  return data as DigitalizacaoFolha;
+}
+
+export async function deleteAnswerSheetScan(
+  scan: Pick<DigitalizacaoFolha, "id" | "storage_path">,
+): Promise<void> {
+  const { error: storageError } = await supabase.storage
+    .from("folhas-digitalizadas")
+    .remove([scan.storage_path]);
+  if (storageError) throw storageError;
+
+  const { error } = await supabase
+    .from("digitalizacoes_folhas")
+    .delete()
+    .eq("id", scan.id);
+  if (error) throw error;
 }
 
 // ---------- Scoring ----------

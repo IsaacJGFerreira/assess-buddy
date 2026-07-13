@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   getAvaliacao, listQuestoes, listAlunosByTurma, listRespostasByAvaliacao,
@@ -11,6 +11,7 @@ import {
   type TipoQuestao, type StatusAvaliacao,
 } from "@/lib/domain";
 import { AnswerSheet } from "@/components/answer-sheet";
+import { AnswerSheetUploadPanel } from "@/components/answer-sheet-upload-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -687,58 +688,78 @@ function CorrecaoTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: s
     onSuccess: () => qc.invalidateQueries({ queryKey: ["avaliacao", avaliacaoId] }),
   });
 
-  if (!turmaId) return <p className="text-muted-foreground">Associe uma turma para registrar as respostas dos alunos.</p>;
-  if (!alunos.data?.length) return <p className="text-muted-foreground">Cadastre alunos na turma.</p>;
-  if (!questoes.data?.length) return <p className="text-muted-foreground">Cadastre as questões antes.</p>;
-
-  return (
-    <div className="grid gap-4 md:grid-cols-[260px_1fr]">
-      <div className="rounded-lg border border-border bg-card overflow-hidden">
-        <div className="px-3 py-2 text-xs font-medium text-muted-foreground border-b border-border">Alunos</div>
-        {alunos.data.map(a => {
-          const respAluno = (respostas.data ?? []).filter(r => r.aluno_id === a.id);
-          const preenchidas = respAluno.filter(r => r.resposta).length;
-          return (
-            <button key={a.id} onClick={() => setAlunoId(a.id)}
-              className={`w-full text-left px-3 py-2 text-sm border-b border-border last:border-0 hover:bg-muted/50 ${active === a.id ? "bg-muted" : ""}`}>
-              <div className="font-medium">{a.chamada ? `${a.chamada}. ` : ""}{a.nome}</div>
-              <div className="text-xs text-muted-foreground">{preenchidas}/{questoes.data.length} respondidas</div>
-            </button>
-          );
-        })}
-      </div>
-      <div className="space-y-3">
-        {activeAluno && (
-          <div className="rounded-lg border border-border bg-card p-4 flex items-center justify-between">
-            <div>
-              <div className="font-semibold">{activeAluno.nome}</div>
-              <div className="text-xs text-muted-foreground">Digite as respostas marcadas pelo aluno</div>
-            </div>
-            <Button size="sm" variant="outline" onClick={() => setStatus.mutate("corrigida")}>Marcar como corrigida</Button>
-          </div>
-        )}
-        <div className="rounded-lg border border-border bg-card divide-y divide-border">
-          {questoes.data.map(q => {
-            const val = byQAluno.get(q.id) ?? "";
-            const { situacao } = corrigirQuestao(q, val);
+  let manualCorrection: ReactNode;
+  if (!turmaId) {
+    manualCorrection = <p className="text-muted-foreground">Associe uma turma para registrar as respostas dos alunos.</p>;
+  } else if (!alunos.data?.length) {
+    manualCorrection = <p className="text-muted-foreground">Cadastre alunos na turma.</p>;
+  } else if (!questoes.data?.length) {
+    manualCorrection = <p className="text-muted-foreground">Cadastre as questões antes.</p>;
+  } else {
+    manualCorrection = (
+      <div className="grid gap-4 md:grid-cols-[260px_1fr]">
+        <div className="rounded-lg border border-border bg-card overflow-hidden">
+          <div className="px-3 py-2 text-xs font-medium text-muted-foreground border-b border-border">Alunos</div>
+          {alunos.data.map(a => {
+            const respAluno = (respostas.data ?? []).filter(r => r.aluno_id === a.id);
+            const preenchidas = respAluno.filter(r => r.resposta).length;
             return (
-              <div key={q.id} className="p-3 flex items-center gap-4">
-                <div className="w-10 font-medium">{q.numero}.</div>
-                <div className="flex-1"><RespostaInput q={q} value={val} onSubmit={(v) => salvar.mutate({ questaoId: q.id, valor: v })} /></div>
-                <div className="w-32 text-right text-sm">
-                  {val && !q.anulada && (
-                    <span className={`px-2 py-0.5 rounded-full text-xs ${situacao === "correta" ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
-                      {situacao === "correta" ? "✓ correta" : "✕ incorreta"}
-                    </span>
-                  )}
-                  {q.anulada && <span className="text-xs text-muted-foreground">anulada</span>}
-                  {!val && !q.anulada && <span className="text-xs text-muted-foreground">em branco</span>}
-                </div>
-              </div>
+              <button key={a.id} onClick={() => setAlunoId(a.id)}
+                className={`w-full text-left px-3 py-2 text-sm border-b border-border last:border-0 hover:bg-muted/50 ${active === a.id ? "bg-muted" : ""}`}>
+                <div className="font-medium">{a.chamada ? `${a.chamada}. ` : ""}{a.nome}</div>
+                <div className="text-xs text-muted-foreground">{preenchidas}/{questoes.data.length} respondidas</div>
+              </button>
             );
           })}
         </div>
+        <div className="space-y-3">
+          {activeAluno && (
+            <div className="rounded-lg border border-border bg-card p-4 flex items-center justify-between">
+              <div>
+                <div className="font-semibold">{activeAluno.nome}</div>
+                <div className="text-xs text-muted-foreground">Digite as respostas marcadas pelo aluno</div>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => setStatus.mutate("corrigida")}>Marcar como corrigida</Button>
+            </div>
+          )}
+          <div className="rounded-lg border border-border bg-card divide-y divide-border">
+            {questoes.data.map(q => {
+              const val = byQAluno.get(q.id) ?? "";
+              const { situacao } = corrigirQuestao(q, val);
+              return (
+                <div key={q.id} className="p-3 flex items-center gap-4">
+                  <div className="w-10 font-medium">{q.numero}.</div>
+                  <div className="flex-1"><RespostaInput q={q} value={val} onSubmit={(v) => salvar.mutate({ questaoId: q.id, valor: v })} /></div>
+                  <div className="w-32 text-right text-sm">
+                    {val && !q.anulada && (
+                      <span className={`px-2 py-0.5 rounded-full text-xs ${situacao === "correta" ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
+                        {situacao === "correta" ? "✓ correta" : "✕ incorreta"}
+                      </span>
+                    )}
+                    {q.anulada && <span className="text-xs text-muted-foreground">anulada</span>}
+                    {!val && !q.anulada && <span className="text-xs text-muted-foreground">em branco</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <AnswerSheetUploadPanel avaliacaoId={avaliacaoId} />
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold">Correção manual</h2>
+          <p className="text-sm text-muted-foreground">
+            Confira ou informe as respostas de cada aluno enquanto a leitura automática não for executada.
+          </p>
+        </div>
+        {manualCorrection}
+      </section>
     </div>
   );
 }
