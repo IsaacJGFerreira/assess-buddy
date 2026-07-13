@@ -30,6 +30,15 @@ export interface OmrRasterImage {
   height: number;
 }
 
+interface OmrContentBounds {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
+
 export interface OmrDetectedMarker extends OmrPoint {
   score: number;
   darkness: number;
@@ -155,8 +164,9 @@ export function analyzeAnswerSheetMarks(
 ): AnswerSheetOmrAnalysis {
   validateRaster(image);
   const integral = buildDarknessIntegral(image);
-  const markers = detectMarkers(image, geometry, integral);
-  validateMarkerQuadrilateral(image, markers);
+  const contentBounds = findDarkContentBounds(image);
+  const markers = detectMarkers(image, geometry, integral, contentBounds);
+  validateMarkerQuadrilateral(markers, contentBounds);
 
   const referenceHorizontalSpan =
     (geometry.markers.topRight.x -
@@ -234,11 +244,12 @@ function detectMarkers(
   image: OmrRasterImage,
   geometry: AnswerSheetOmrGeometry,
   integral: Uint32Array,
+  contentBounds: OmrContentBounds,
 ): Record<OmrMarkerCorner, OmrDetectedMarker> {
   return Object.fromEntries(
     (Object.keys(geometry.markers) as OmrMarkerCorner[]).map((corner) => [
       corner,
-      detectMarker(image, geometry, integral, corner),
+      detectMarker(image, geometry, integral, corner, contentBounds),
     ]),
   ) as Record<OmrMarkerCorner, OmrDetectedMarker>;
 }
@@ -248,49 +259,73 @@ function detectMarker(
   geometry: AnswerSheetOmrGeometry,
   integral: Uint32Array,
   corner: OmrMarkerCorner,
+  contentBounds: OmrContentBounds,
 ): OmrDetectedMarker {
   const expected = geometry.markers[corner];
-  const expectedHalfWidth = Math.max(2, (geometry.markerWidth * image.width) / 2);
-  const expectedHalfHeight = Math.max(2, (geometry.markerHeight * image.height) / 2);
-  const searchRadiusX = Math.max(expectedHalfWidth * 3, image.width * 0.055);
-  const searchRadiusY = Math.max(expectedHalfHeight * 3, image.height * 0.055);
-  const expectedX = expected.x * image.width;
-  const expectedY = expected.y * image.height;
-  const step = Math.max(1, Math.floor(Math.min(expectedHalfWidth, expectedHalfHeight) / 4));
-
+  const referenceHorizontalSpan =
+    (geometry.markers.topRight.x -
+      geometry.markers.topLeft.x +
+      (geometry.markers.bottomRight.x - geometry.markers.bottomLeft.x)) /
+    2;
+  const referenceVerticalSpan =
+    (geometry.markers.bottomLeft.y -
+      geometry.markers.topLeft.y +
+      (geometry.markers.bottomRight.y - geometry.markers.topRight.y)) /
+    2;
+  const estimatedPageWidth =
+    contentBounds.width / Math.max(0.2, referenceHorizontalSpan + geometry.markerWidth);
+  const estimatedPageHeight =
+    contentBounds.height / Math.max(0.2, referenceVerticalSpan + geometry.markerHeight);
+  const expectedHalfWidth = Math.max(2, (geometry.markerWidth * estimatedPageWidth) / 2);
+  const expectedHalfHeight = Math.max(2, (geometry.markerHeight * estimatedPageHeight) / 2);
+  const searchWidth = Math.max(expectedHalfWidth * 9, contentBounds.width * 0.18);
+  const searchHeight = Math.max(expectedHalfHeight * 9, contentBounds.height * 0.14);
+  const onRight = corner === "topRight" || corner === "bottomRight";
+  const onBottom = corner === "bottomLeft" || corner === "bottomRight";
+  const searchLeft = onRight
+    ? contentBounds.right - searchWidth
+    : contentBounds.left - expectedHalfWidth * 2;
+  const searchRight = onRight
+    ? contentBounds.right + expectedHalfWidth * 2
+    : contentBounds.left + searchWidth;
+  const searchTop = onBottom
+    ? contentBounds.bottom - searchHeight
+    : contentBounds.top - expectedHalfHeight * 2;
+  const searchBottom = onBottom
+    ? contentBounds.bottom + expectedHalfHeight * 2
+    : contentBounds.top + searchHeight;
   let best = scoreMarkerCandidate(
     image,
     integral,
-    expectedX,
-    expectedY,
+    expected.x * image.width,
+    expected.y * image.height,
     expectedHalfWidth,
     expectedHalfHeight,
   );
-  for (let y = expectedY - searchRadiusY; y <= expectedY + searchRadiusY; y += step) {
-    for (let x = expectedX - searchRadiusX; x <= expectedX + searchRadiusX; x += step) {
-      const candidate = scoreMarkerCandidate(
-        image,
-        integral,
-        x,
-        y,
-        expectedHalfWidth,
-        expectedHalfHeight,
-      );
-      if (candidate.score > best.score) best = candidate;
+  let bestHalfWidth = expectedHalfWidth;
+  let bestHalfHeight = expectedHalfHeight;
+
+  for (const scale of [0.72, 0.86, 1, 1.14, 1.28]) {
+    const halfWidth = expectedHalfWidth * scale;
+    const halfHeight = expectedHalfHeight * scale;
+    const step = Math.max(1, Math.floor(Math.min(halfWidth, halfHeight) / 3));
+    for (let y = searchTop; y <= searchBottom; y += step) {
+      for (let x = searchLeft; x <= searchRight; x += step) {
+        const candidate = scoreMarkerCandidate(image, integral, x, y, halfWidth, halfHeight);
+        if (candidate.score > best.score) {
+          best = candidate;
+          bestHalfWidth = halfWidth;
+          bestHalfHeight = halfHeight;
+        }
+      }
     }
   }
 
+  const refinementRadius = Math.max(2, Math.floor(Math.min(bestHalfWidth, bestHalfHeight) / 3));
   const coarseBest = best;
-  for (let y = coarseBest.y - step; y <= coarseBest.y + step; y += 1) {
-    for (let x = coarseBest.x - step; x <= coarseBest.x + step; x += 1) {
-      const candidate = scoreMarkerCandidate(
-        image,
-        integral,
-        x,
-        y,
-        expectedHalfWidth,
-        expectedHalfHeight,
-      );
+  for (let y = coarseBest.y - refinementRadius; y <= coarseBest.y + refinementRadius; y += 1) {
+    for (let x = coarseBest.x - refinementRadius; x <= coarseBest.x + refinementRadius; x += 1) {
+      const candidate = scoreMarkerCandidate(image, integral, x, y, bestHalfWidth, bestHalfHeight);
       if (candidate.score > best.score) best = candidate;
     }
   }
@@ -301,6 +336,44 @@ function detectMarker(
     );
   }
   return best;
+}
+
+function findDarkContentBounds(image: OmrRasterImage): OmrContentBounds {
+  const darkByColumn = new Uint32Array(image.width);
+  const darkByRow = new Uint32Array(image.height);
+  for (let y = 0; y < image.height; y += 1) {
+    for (let x = 0; x < image.width; x += 1) {
+      if (pixelDarkness(image.data, (y * image.width + x) * 4) < 150) continue;
+      darkByColumn[x] += 1;
+      darkByRow[y] += 1;
+    }
+  }
+  const minimumColumnInk = Math.max(2, Math.floor(image.height * 0.002));
+  const minimumRowInk = Math.max(2, Math.floor(image.width * 0.002));
+  const left = darkByColumn.findIndex((count) => count >= minimumColumnInk);
+  const top = darkByRow.findIndex((count) => count >= minimumRowInk);
+  const right = findLastIndex(darkByColumn, (count) => count >= minimumColumnInk);
+  const bottom = findLastIndex(darkByRow, (count) => count >= minimumRowInk);
+  if (right < left || bottom < top) {
+    throw new OmrAnalysisError(
+      "A imagem não contém contraste suficiente para localizar os quatro quadrados pretos.",
+    );
+  }
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    width: right - left + 1,
+    height: bottom - top + 1,
+  };
+}
+
+function findLastIndex(values: Uint32Array, predicate: (value: number) => boolean): number {
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    if (predicate(values[index])) return index;
+  }
+  return -1;
 }
 
 function scoreMarkerCandidate(
@@ -360,16 +433,20 @@ function rectangleStats(
 }
 
 function validateMarkerQuadrilateral(
-  image: OmrRasterImage,
   markers: Record<OmrMarkerCorner, OmrDetectedMarker>,
+  contentBounds: OmrContentBounds,
 ) {
   const topWidth = distance(markers.topLeft, markers.topRight);
   const bottomWidth = distance(markers.bottomLeft, markers.bottomRight);
   const leftHeight = distance(markers.topLeft, markers.bottomLeft);
   const rightHeight = distance(markers.topRight, markers.bottomRight);
   if (
-    Math.min(topWidth, bottomWidth) < image.width * 0.65 ||
-    Math.min(leftHeight, rightHeight) < image.height * 0.65
+    Math.min(topWidth, bottomWidth) < Math.max(120, contentBounds.width * 0.62) ||
+    Math.min(leftHeight, rightHeight) < Math.max(120, contentBounds.height * 0.62) ||
+    markers.topLeft.x >= markers.topRight.x ||
+    markers.bottomLeft.x >= markers.bottomRight.x ||
+    markers.topLeft.y >= markers.bottomLeft.y ||
+    markers.topRight.y >= markers.bottomRight.y
   ) {
     throw new OmrAnalysisError(
       "Os marcadores encontrados não formam uma folha completa. Volte ao recorte e inclua os quatro cantos.",

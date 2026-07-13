@@ -65,6 +65,36 @@ test("flags a partially filled numeric response as incomplete", () => {
   assert.equal(reading?.reviewReason, "incomplete");
 });
 
+test("reads a centered A4 portrait sheet with ten questions and wide side margins", () => {
+  const portraitGeometry = buildPortraitGeometry();
+  const portraitCorners = {
+    topLeft: { x: 300, y: 44 },
+    topRight: { x: 1100, y: 36 },
+    bottomLeft: { x: 290, y: 1196 },
+    bottomRight: { x: 1110, y: 1204 },
+  };
+  const expected = Array.from({ length: 10 }, (_, index) =>
+    String.fromCharCode("A".charCodeAt(0) + (index % 5)),
+  );
+  const image = createSyntheticSheetFor(
+    1400,
+    1240,
+    portraitGeometry,
+    portraitCorners,
+    expected.map((value, index) => [`portrait-q${index + 1}`, null, value]),
+  );
+  const analysis = analyzeAnswerSheetMarks(image, portraitGeometry);
+
+  assert.equal(analysis.readings.length, 10);
+  assert.deepEqual(
+    analysis.readings.map((reading) => reading.value),
+    expected,
+  );
+  assert.ok(analysis.readings.every((reading) => reading.status === "confident"));
+  assert.ok(Math.abs(analysis.markers.topLeft.x - portraitCorners.topLeft.x) < 4);
+  assert.ok(Math.abs(analysis.markers.bottomRight.x - portraitCorners.bottomRight.x) < 4);
+});
+
 test("rejects an image without the four alignment markers", () => {
   const image = createRaster(WIDTH, HEIGHT);
   assert.throws(
@@ -113,6 +143,54 @@ function buildGeometry(): AnswerSheetOmrGeometry {
   };
 }
 
+function buildPortraitGeometry(): AnswerSheetOmrGeometry {
+  const bubbles: OmrBubbleTarget[] = [];
+  for (let questionIndex = 0; questionIndex < 10; questionIndex += 1) {
+    for (let optionIndex = 0; optionIndex < 5; optionIndex += 1) {
+      bubbles.push(
+        makePortraitBubble(
+          `portrait-q${questionIndex + 1}`,
+          questionIndex + 1,
+          String.fromCharCode("A".charCodeAt(0) + optionIndex),
+          0.16 + optionIndex * 0.052,
+          0.25 + questionIndex * 0.052,
+        ),
+      );
+    }
+  }
+  return {
+    markers: {
+      topLeft: { x: 6 / 210, y: 6 / 297 },
+      topRight: { x: 204 / 210, y: 6 / 297 },
+      bottomLeft: { x: 6 / 210, y: 291 / 297 },
+      bottomRight: { x: 204 / 210, y: 291 / 297 },
+    },
+    markerWidth: 4 / 210,
+    markerHeight: 4 / 297,
+    bubbles,
+  };
+}
+
+function makePortraitBubble(
+  questionId: string,
+  questionNumber: number,
+  value: string,
+  x: number,
+  y: number,
+): OmrBubbleTarget {
+  return {
+    questionId,
+    questionNumber,
+    kind: "objective",
+    value,
+    digitIndex: null,
+    x,
+    y,
+    radiusX: 2.5 / 210,
+    radiusY: 2.5 / 297,
+  };
+}
+
 function makeBubble(
   questionId: string,
   questionNumber: number,
@@ -138,9 +216,19 @@ function makeBubble(
 function createSyntheticSheet(
   filled: Array<[questionId: string, digitIndex: number | null, value: string]>,
 ): OmrRasterImage {
-  const image = createRaster(WIDTH, HEIGHT);
+  return createSyntheticSheetFor(WIDTH, HEIGHT, geometry, detectedCorners, filled);
+}
+
+function createSyntheticSheetFor(
+  width: number,
+  height: number,
+  sheetGeometry: AnswerSheetOmrGeometry,
+  corners: Record<keyof typeof detectedCorners, OmrPoint>,
+  filled: Array<[questionId: string, digitIndex: number | null, value: string]>,
+): OmrRasterImage {
+  const image = createRaster(width, height);
   const markerSize = 16;
-  for (const corner of Object.values(detectedCorners)) {
+  for (const corner of Object.values(corners)) {
     fillRectangle(
       image,
       corner.x - markerSize / 2,
@@ -149,8 +237,8 @@ function createSyntheticSheet(
       markerSize,
     );
   }
-  for (const bubble of geometry.bubbles) {
-    const center = mapBubble(bubble);
+  for (const bubble of sheetGeometry.bubbles) {
+    const center = mapBubble(bubble, sheetGeometry, corners);
     drawRing(image, center.x, center.y, 10, 2);
     fillRectangle(image, center.x - 1, center.y - 3, 2, 6);
     const isFilled = filled.some(
@@ -175,8 +263,12 @@ function createRaster(width: number, height: number): OmrRasterImage {
   return { data, width, height };
 }
 
-function mapBubble(point: OmrPoint): OmrPoint {
-  const reference = geometry.markers;
+function mapBubble(
+  point: OmrPoint,
+  sheetGeometry: AnswerSheetOmrGeometry,
+  corners: Record<keyof typeof detectedCorners, OmrPoint>,
+): OmrPoint {
+  const reference = sheetGeometry.markers;
   const referenceLeft = (reference.topLeft.x + reference.bottomLeft.x) / 2;
   const referenceRight = (reference.topRight.x + reference.bottomRight.x) / 2;
   const referenceTop = (reference.topLeft.y + reference.topRight.y) / 2;
@@ -185,15 +277,15 @@ function mapBubble(point: OmrPoint): OmrPoint {
   const v = (point.y - referenceTop) / (referenceBottom - referenceTop);
   return {
     x:
-      detectedCorners.topLeft.x * (1 - u) * (1 - v) +
-      detectedCorners.topRight.x * u * (1 - v) +
-      detectedCorners.bottomLeft.x * (1 - u) * v +
-      detectedCorners.bottomRight.x * u * v,
+      corners.topLeft.x * (1 - u) * (1 - v) +
+      corners.topRight.x * u * (1 - v) +
+      corners.bottomLeft.x * (1 - u) * v +
+      corners.bottomRight.x * u * v,
     y:
-      detectedCorners.topLeft.y * (1 - u) * (1 - v) +
-      detectedCorners.topRight.y * u * (1 - v) +
-      detectedCorners.bottomLeft.y * (1 - u) * v +
-      detectedCorners.bottomRight.y * u * v,
+      corners.topLeft.y * (1 - u) * (1 - v) +
+      corners.topRight.y * u * (1 - v) +
+      corners.bottomLeft.y * (1 - u) * v +
+      corners.bottomRight.y * u * v,
   };
 }
 

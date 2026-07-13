@@ -260,6 +260,21 @@
   bottom: 4mm;
 }
 
+.answer-sheet-alignment-crop {
+  overflow: visible !important;
+  border: 2px solid rgb(34 211 238 / 95%) !important;
+  background:
+    linear-gradient(rgb(34 211 238), rgb(34 211 238)) left top / 20px 4px no-repeat,
+    linear-gradient(rgb(34 211 238), rgb(34 211 238)) left top / 4px 20px no-repeat,
+    linear-gradient(rgb(34 211 238), rgb(34 211 238)) right top / 20px 4px no-repeat,
+    linear-gradient(rgb(34 211 238), rgb(34 211 238)) right top / 4px 20px no-repeat,
+    linear-gradient(rgb(34 211 238), rgb(34 211 238)) left bottom / 20px 4px no-repeat,
+    linear-gradient(rgb(34 211 238), rgb(34 211 238)) left bottom / 4px 20px no-repeat,
+    linear-gradient(rgb(34 211 238), rgb(34 211 238)) right bottom / 20px 4px no-repeat,
+    linear-gradient(rgb(34 211 238), rgb(34 211 238)) right bottom / 4px 20px no-repeat;
+  box-shadow: 0 0 0 9999em rgb(2 6 23 / 68%) !important;
+}
+
 .answer-sheet-header {
   display: flex;
   align-items: flex-start;
