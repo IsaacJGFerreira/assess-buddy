@@ -43,6 +43,7 @@ export interface OmrBubbleSample extends OmrBubbleTarget {
 }
 
 export type OmrReadingStatus = "confident" | "blank" | "ambiguous" | "reviewed";
+export type OmrReviewReason = "multiple" | "weak" | "incomplete";
 
 export interface OmrQuestionReading {
   questionId: string;
@@ -50,6 +51,8 @@ export interface OmrQuestionReading {
   kind: "objective" | "numeric";
   value: string | null;
   status: OmrReadingStatus;
+  reviewReason: OmrReviewReason | null;
+  detectedValues: string[];
   confidence: number;
   requiresReview: boolean;
   samples: OmrBubbleSample[];
@@ -458,6 +461,8 @@ function classifyQuestionReadings(
         kind: first.kind,
         value: classification.value,
         status: classification.status,
+        reviewReason: classification.reviewReason,
+        detectedValues: classification.detectedValues,
         confidence: classification.confidence,
         requiresReview: classification.requiresReview,
         samples: questionSamples,
@@ -484,6 +489,7 @@ function classifyNumericQuestion(
   const allBlank = groups.length > 0 && groups.every((group) => group.status === "blank");
   const allConfident = groups.length > 0 && groups.every((group) => group.status === "confident");
   const confidence = average(groups.map((group) => group.confidence));
+  const detectedValues = groups.flatMap((group) => group.detectedValues);
 
   if (allBlank) {
     return {
@@ -492,6 +498,8 @@ function classifyNumericQuestion(
       kind: "numeric",
       value: null,
       status: "blank",
+      reviewReason: null,
+      detectedValues: [],
       confidence,
       requiresReview: false,
       samples,
@@ -504,6 +512,8 @@ function classifyNumericQuestion(
       kind: "numeric",
       value: groups.map((group) => group.value).join(""),
       status: "confident",
+      reviewReason: null,
+      detectedValues,
       confidence,
       requiresReview: false,
       samples,
@@ -512,12 +522,19 @@ function classifyNumericQuestion(
   const suggestion = groups.every((group) => group.value !== null)
     ? groups.map((group) => group.value).join("")
     : null;
+  const reviewReason = groups.some((group) => group.reviewReason === "multiple")
+    ? "multiple"
+    : groups.some((group) => group.status === "blank")
+      ? "incomplete"
+      : "weak";
   return {
     questionId: first.questionId,
     questionNumber: first.questionNumber,
     kind: "numeric",
     value: suggestion,
     status: "ambiguous",
+    reviewReason,
+    detectedValues,
     confidence,
     requiresReview: true,
     samples,
@@ -536,6 +553,8 @@ function classifyBubbleGroup(samples: OmrBubbleSample[], threshold: number) {
     return {
       value: confidentBlank ? null : top.value,
       status: confidentBlank ? ("blank" as const) : ("ambiguous" as const),
+      reviewReason: confidentBlank ? null : ("weak" as const),
+      detectedValues: confidentBlank ? [] : [top.value],
       confidence: clamp((threshold - top.score + 0.05) / 0.18, 0.15, 1),
       requiresReview: !confidentBlank,
     };
@@ -545,6 +564,8 @@ function classifyBubbleGroup(samples: OmrBubbleSample[], threshold: number) {
     return {
       value: top.value,
       status: confident ? ("confident" as const) : ("ambiguous" as const),
+      reviewReason: confident ? null : ("weak" as const),
+      detectedValues: [top.value],
       confidence: clamp((gap + top.score - threshold) / 0.32, 0.2, 1),
       requiresReview: !confident,
     };
@@ -552,6 +573,8 @@ function classifyBubbleGroup(samples: OmrBubbleSample[], threshold: number) {
   return {
     value: null,
     status: "ambiguous" as const,
+    reviewReason: "multiple" as const,
+    detectedValues: marked.map((sample) => sample.value),
     confidence: clamp(gap / 0.2, 0.1, 0.55),
     requiresReview: true,
   };
