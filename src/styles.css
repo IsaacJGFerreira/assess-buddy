@@ -519,6 +519,26 @@
 }
 
 @media print {
+  body.printing-answer-sheet * {
+    visibility: hidden !important;
+  }
+
+  body.printing-answer-sheet .answer-sheet-export-root,
+  body.printing-answer-sheet .answer-sheet-export-root * {
+    visibility: visible !important;
+  }
+
+  body.printing-answer-sheet .answer-sheet-export-root {
+    position: absolute;
+    inset: 0 auto auto 0;
+    z-index: 9999;
+  }
+
+  body.printing-answer-sheet .answer-sheet-inline-preview,
+  body.printing-answer-sheet .answer-sheet-inline-viewport {
+    overflow: visible !important;
+  }
+
   .answer-sheet-export-root {
     width: auto;
     min-width: 0;
