@@ -14,7 +14,262 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      alunos: {
+        Row: {
+          chamada: number | null
+          created_at: string
+          id: string
+          matricula: string | null
+          nome: string
+          owner_id: string
+          turma_id: string
+          updated_at: string
+        }
+        Insert: {
+          chamada?: number | null
+          created_at?: string
+          id?: string
+          matricula?: string | null
+          nome: string
+          owner_id: string
+          turma_id: string
+          updated_at?: string
+        }
+        Update: {
+          chamada?: number | null
+          created_at?: string
+          id?: string
+          matricula?: string | null
+          nome?: string
+          owner_id?: string
+          turma_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alunos_turma_id_fkey"
+            columns: ["turma_id"]
+            isOneToOne: false
+            referencedRelation: "turmas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      avaliacoes: {
+        Row: {
+          created_at: string
+          data_aplicacao: string | null
+          disciplina: string | null
+          id: string
+          instrucoes: string | null
+          owner_id: string
+          status: Database["public"]["Enums"]["status_avaliacao"]
+          titulo: string
+          turma_id: string | null
+          updated_at: string
+          valor_total: number
+        }
+        Insert: {
+          created_at?: string
+          data_aplicacao?: string | null
+          disciplina?: string | null
+          id?: string
+          instrucoes?: string | null
+          owner_id: string
+          status?: Database["public"]["Enums"]["status_avaliacao"]
+          titulo: string
+          turma_id?: string | null
+          updated_at?: string
+          valor_total?: number
+        }
+        Update: {
+          created_at?: string
+          data_aplicacao?: string | null
+          disciplina?: string | null
+          id?: string
+          instrucoes?: string | null
+          owner_id?: string
+          status?: Database["public"]["Enums"]["status_avaliacao"]
+          titulo?: string
+          turma_id?: string | null
+          updated_at?: string
+          valor_total?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "avaliacoes_turma_id_fkey"
+            columns: ["turma_id"]
+            isOneToOne: false
+            referencedRelation: "turmas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          escola: string | null
+          id: string
+          nome: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          escola?: string | null
+          id: string
+          nome?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          escola?: string | null
+          id?: string
+          nome?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      questoes: {
+        Row: {
+          anulada: boolean
+          avaliacao_id: string
+          conteudo: string | null
+          created_at: string
+          gabarito: string | null
+          id: string
+          num_digitos: number | null
+          numero: number
+          owner_id: string
+          qtd_alternativas: number | null
+          tipo: Database["public"]["Enums"]["tipo_questao"]
+          updated_at: string
+          valor: number
+        }
+        Insert: {
+          anulada?: boolean
+          avaliacao_id: string
+          conteudo?: string | null
+          created_at?: string
+          gabarito?: string | null
+          id?: string
+          num_digitos?: number | null
+          numero: number
+          owner_id: string
+          qtd_alternativas?: number | null
+          tipo: Database["public"]["Enums"]["tipo_questao"]
+          updated_at?: string
+          valor?: number
+        }
+        Update: {
+          anulada?: boolean
+          avaliacao_id?: string
+          conteudo?: string | null
+          created_at?: string
+          gabarito?: string | null
+          id?: string
+          num_digitos?: number | null
+          numero?: number
+          owner_id?: string
+          qtd_alternativas?: number | null
+          tipo?: Database["public"]["Enums"]["tipo_questao"]
+          updated_at?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "questoes_avaliacao_id_fkey"
+            columns: ["avaliacao_id"]
+            isOneToOne: false
+            referencedRelation: "avaliacoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      respostas_alunos: {
+        Row: {
+          aluno_id: string
+          avaliacao_id: string
+          created_at: string
+          id: string
+          owner_id: string
+          questao_id: string
+          resposta: string | null
+          updated_at: string
+        }
+        Insert: {
+          aluno_id: string
+          avaliacao_id: string
+          created_at?: string
+          id?: string
+          owner_id: string
+          questao_id: string
+          resposta?: string | null
+          updated_at?: string
+        }
+        Update: {
+          aluno_id?: string
+          avaliacao_id?: string
+          created_at?: string
+          id?: string
+          owner_id?: string
+          questao_id?: string
+          resposta?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "respostas_alunos_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "alunos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "respostas_alunos_avaliacao_id_fkey"
+            columns: ["avaliacao_id"]
+            isOneToOne: false
+            referencedRelation: "avaliacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "respostas_alunos_questao_id_fkey"
+            columns: ["questao_id"]
+            isOneToOne: false
+            referencedRelation: "questoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      turmas: {
+        Row: {
+          ano: number | null
+          created_at: string
+          id: string
+          nome: string
+          owner_id: string
+          serie: string | null
+          updated_at: string
+        }
+        Insert: {
+          ano?: number | null
+          created_at?: string
+          id?: string
+          nome: string
+          owner_id: string
+          serie?: string | null
+          updated_at?: string
+        }
+        Update: {
+          ano?: number | null
+          created_at?: string
+          id?: string
+          nome?: string
+          owner_id?: string
+          serie?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +278,14 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      status_avaliacao:
+        | "elaboracao"
+        | "pronta"
+        | "aplicada"
+        | "em_correcao"
+        | "corrigida"
+        | "devolvida"
+      tipo_questao: "mc" | "ce" | "num"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +412,16 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      status_avaliacao: [
+        "elaboracao",
+        "pronta",
+        "aplicada",
+        "em_correcao",
+        "corrigida",
+        "devolvida",
+      ],
+      tipo_questao: ["mc", "ce", "num"],
+    },
   },
 } as const
