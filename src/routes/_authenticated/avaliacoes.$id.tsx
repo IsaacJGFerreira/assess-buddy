@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   getAvaliacao, listQuestoes, listAlunosByTurma, listRespostasByAvaliacao,
   alternativas, corrigirQuestao, calcularNotaAluno,
-  createOrGetAnswerSheet, getLatestAnswerSheetModel,
+  createOrGetAnswerSheet, getLatestAnswerSheetModel, isAnswerSheetPersistenceUnavailable,
   STATUS_LABEL, TIPO_LABEL,
   type Aluno, type Avaliacao, type IdentificacaoFolhaResposta, type Questao,
   type TipoQuestao, type StatusAvaliacao,
@@ -20,7 +20,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import {
   ArrowLeft, Copy, Download, ExternalLink, FileImage, FileText,
-  LayoutGrid, Loader2, Plus, Printer, Trash2,
+  LayoutGrid, Loader2, Plus, Printer, Trash2, TriangleAlert,
 } from "lucide-react";
 import { exportAnswerSheetAsPdf, exportAnswerSheetAsPng } from "@/lib/answer-sheet-export";
 import {
@@ -291,7 +291,8 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
   const [rowsOverride, setRowsOverride] = useState<number | null>(null);
   const [preview, setPreview] = useState<{
     alunoId?: string;
-    identification: IdentificacaoFolhaResposta;
+    identification: IdentificacaoFolhaResposta | null;
+    persistenceUnavailable?: boolean;
   } | null>(null);
   const turmaId = avaliacao.turma_id;
   const savedModel = useQuery({
@@ -339,7 +340,20 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
       setPreview({ alunoId: variables.alunoId, identification });
       toast.success(`Folha ${identification.codigo} · versão ${identification.versao}.`);
     },
-    onError: (error: Error) => toast.error(error.message),
+    onError: (error: Error, variables) => {
+      if (isAnswerSheetPersistenceUnavailable(error)) {
+        setPreview({
+          alunoId: variables.alunoId,
+          identification: null,
+          persistenceUnavailable: true,
+        });
+        toast.warning("Prévia aberta. O banco ainda precisa receber a atualização das folhas.");
+        return;
+      }
+
+      console.error(error);
+      toast.error("Não foi possível salvar a folha. Tente novamente.");
+    },
   });
 
   function changeOrientation(value: AnswerSheetOrientation) {
@@ -356,6 +370,7 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
         aluno={previewAluno}
         layout={layout}
         identification={preview.identification}
+        persistenceUnavailable={preview.persistenceUnavailable}
         onBack={() => setPreview(null)}
       />
     );
@@ -467,20 +482,25 @@ function EmbeddedAnswerSheetPreview({
   aluno,
   layout,
   identification,
+  persistenceUnavailable = false,
   onBack,
 }: {
   avaliacao: Avaliacao;
   questoes: Questao[];
   aluno?: Aluno | null;
   layout: AnswerSheetLayout;
-  identification: IdentificacaoFolhaResposta;
+  identification: IdentificacaoFolhaResposta | null;
+  persistenceUnavailable?: boolean;
   onBack: () => void;
 }) {
   const exportRootRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState<"pdf" | "png" | null>(null);
 
   async function exportFile(format: "pdf" | "png") {
-    if (!exportRootRef.current) return;
+    if (!exportRootRef.current || !identification) {
+      toast.warning("Aplique a atualização do banco antes de exportar esta folha.");
+      return;
+    }
     setExporting(format);
     try {
       if (format === "pdf") {
@@ -505,6 +525,10 @@ function EmbeddedAnswerSheetPreview({
   }
 
   function printAnswerSheet() {
+    if (!identification) {
+      toast.warning("Aplique a atualização do banco antes de imprimir esta folha.");
+      return;
+    }
     document.body.classList.add("printing-answer-sheet");
     try {
       window.print();
@@ -531,9 +555,15 @@ function EmbeddedAnswerSheetPreview({
               {layout.columns} coluna{layout.columns > 1 ? "s" : ""} · {layout.rowsPerColumn} linhas
               · A4 {layout.orientation === "landscape" ? "paisagem" : "retrato"}
             </div>
-            <div className="mt-1 font-mono text-xs text-muted-foreground">
-              {identification.codigo} · versão {identification.versao}
-            </div>
+            {identification ? (
+              <div className="mt-1 font-mono text-xs text-muted-foreground">
+                {identification.codigo} · versão {identification.versao}
+              </div>
+            ) : (
+              <div className="mt-1 text-xs font-medium text-amber-700">
+                Prévia temporária · ainda não salva
+              </div>
+            )}
           </div>
         </div>
 
@@ -542,7 +572,7 @@ function EmbeddedAnswerSheetPreview({
             type="button"
             variant="outline"
             onClick={() => void exportFile("png")}
-            disabled={exporting !== null || questoes.length === 0}
+            disabled={exporting !== null || questoes.length === 0 || !identification}
           >
             {exporting === "png" ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -555,7 +585,7 @@ function EmbeddedAnswerSheetPreview({
             type="button"
             variant="outline"
             onClick={() => void exportFile("pdf")}
-            disabled={exporting !== null || questoes.length === 0}
+            disabled={exporting !== null || questoes.length === 0 || !identification}
           >
             {exporting === "pdf" ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -567,13 +597,26 @@ function EmbeddedAnswerSheetPreview({
           <Button
             type="button"
             onClick={printAnswerSheet}
-            disabled={exporting !== null || questoes.length === 0}
+            disabled={exporting !== null || questoes.length === 0 || !identification}
           >
             <Printer className="mr-2 h-4 w-4" />
             Imprimir
           </Button>
         </div>
       </div>
+
+      {persistenceUnavailable && (
+        <div className="no-print flex gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <div className="font-medium">A folha foi aberta somente para conferência.</div>
+            <p className="mt-0.5 text-amber-800">
+              A atualização do banco ainda não foi aplicada. Impressão e downloads ficam
+              bloqueados para evitar uma folha sem identificação e QR Code válidos.
+            </p>
+          </div>
+        </div>
+      )}
 
       {questoes.length === 0 ? (
         <div className="p-8 text-center text-muted-foreground">
@@ -587,11 +630,11 @@ function EmbeddedAnswerSheetPreview({
               questoes={questoes}
               aluno={aluno}
               layout={layout}
-              identification={{
+              identification={identification ? {
                 code: identification.codigo,
                 version: identification.versao,
                 qrPayload: identification.qrPayload,
-              }}
+              } : undefined}
             />
           </div>
         </div>
