@@ -129,29 +129,23 @@ export interface UploadDigitalizacaoFolhaInput {
   alturaPx: number;
 }
 
-const ANSWER_SHEET_SCHEMA_ERROR_CODES = new Set([
-  "42P01",
-  "42883",
-  "PGRST202",
-  "PGRST205",
-]);
+const ANSWER_SHEET_SCHEMA_ERROR_CODES = new Set(["42P01", "42883", "PGRST202", "PGRST205"]);
 
 export function isAnswerSheetPersistenceUnavailable(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
 
   const candidate = error as { code?: unknown; message?: unknown };
   const code = typeof candidate.code === "string" ? candidate.code : "";
-  const message = typeof candidate.message === "string"
-    ? candidate.message.toLowerCase()
-    : "";
+  const message = typeof candidate.message === "string" ? candidate.message.toLowerCase() : "";
 
-  return ANSWER_SHEET_SCHEMA_ERROR_CODES.has(code)
-    || (message.includes("schema cache") && (
-      message.includes("criar_ou_obter_folha_respostas")
-      || message.includes("modelos_folha_respostas")
-      || message.includes("folhas_respostas")
-      || message.includes("digitalizacoes_folhas")
-    ));
+  return (
+    ANSWER_SHEET_SCHEMA_ERROR_CODES.has(code) ||
+    (message.includes("schema cache") &&
+      (message.includes("criar_ou_obter_folha_respostas") ||
+        message.includes("modelos_folha_respostas") ||
+        message.includes("folhas_respostas") ||
+        message.includes("digitalizacoes_folhas")))
+  );
 }
 
 // ---------- Fetchers ----------
@@ -283,9 +277,7 @@ export async function createOrGetAnswerSheet({
   };
 }
 
-export async function listAnswerSheetScans(
-  avaliacaoId: string,
-): Promise<DigitalizacaoFolha[]> {
+export async function listAnswerSheetScans(avaliacaoId: string): Promise<DigitalizacaoFolha[]> {
   const { data, error } = await supabase
     .from("digitalizacoes_folhas")
     .select("*")
@@ -371,7 +363,7 @@ export async function saveAnswerSheetScanReading({
   confianca,
 }: {
   scanId: string;
-  alunoId: string;
+  alunoId?: string | null;
   modeloId: string;
   pagina: number;
   resultado: Json;
@@ -380,7 +372,7 @@ export async function saveAnswerSheetScanReading({
   const { error } = await supabase
     .from("digitalizacoes_folhas")
     .update({
-      aluno_id: alunoId,
+      aluno_id: alunoId || null,
       modelo_id: modeloId,
       pagina_modelo: pagina,
       resultado_leitura: resultado,
@@ -402,11 +394,28 @@ export async function confirmAnswerSheetScanReading({
   resultado,
 }: {
   scanId: string;
-  alunoId: string;
+  alunoId?: string | null;
   modeloId: string;
   pagina: number;
   resultado: Json;
 }): Promise<void> {
+  if (!alunoId) {
+    const { error } = await supabase
+      .from("digitalizacoes_folhas")
+      .update({
+        aluno_id: null,
+        modelo_id: modeloId,
+        pagina_modelo: pagina,
+        resultado_leitura: resultado,
+        status: "processada",
+        processado_at: new Date().toISOString(),
+      })
+      .eq("id", scanId)
+      .select("id")
+      .single();
+    if (error) throw error;
+    return;
+  }
   const { error } = await supabase.rpc("confirmar_leitura_folha", {
     p_digitalizacao_id: scanId,
     p_aluno_id: alunoId,
