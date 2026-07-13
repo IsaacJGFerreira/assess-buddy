@@ -51,6 +51,18 @@ test("flags two filled bubbles in the same question for review", () => {
   assert.equal(reading?.status, "ambiguous");
   assert.equal(reading?.requiresReview, true);
   assert.equal(reading?.value, null);
+  assert.equal(reading?.reviewReason, "multiple");
+  assert.deepEqual(reading?.detectedValues.sort(), ["A", "B"]);
+});
+
+test("flags a partially filled numeric response as incomplete", () => {
+  const image = createSyntheticSheet([["q3", 0, "4"]]);
+  const analysis = analyzeAnswerSheetMarks(image, geometry);
+  const reading = analysis.readings.find((item) => item.questionId === "q3");
+
+  assert.equal(reading?.status, "ambiguous");
+  assert.equal(reading?.requiresReview, true);
+  assert.equal(reading?.reviewReason, "incomplete");
 });
 
 test("rejects an image without the four alignment markers", () => {
