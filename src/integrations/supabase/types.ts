@@ -105,6 +105,105 @@ export type Database = {
           },
         ]
       }
+      folhas_respostas: {
+        Row: {
+          aluno_id: string | null
+          avaliacao_id: string
+          codigo: string
+          created_at: string
+          id: string
+          modelo_id: string
+          owner_id: string
+          qr_payload: string
+        }
+        Insert: {
+          aluno_id?: string | null
+          avaliacao_id: string
+          codigo?: string
+          created_at?: string
+          id?: string
+          modelo_id: string
+          owner_id: string
+          qr_payload?: never
+        }
+        Update: {
+          aluno_id?: string | null
+          avaliacao_id?: string
+          codigo?: string
+          created_at?: string
+          id?: string
+          modelo_id?: string
+          owner_id?: string
+          qr_payload?: never
+        }
+        Relationships: [
+          {
+            foreignKeyName: "folhas_respostas_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "alunos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "folhas_respostas_avaliacao_id_fkey"
+            columns: ["avaliacao_id"]
+            isOneToOne: false
+            referencedRelation: "avaliacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "folhas_respostas_modelo_id_fkey"
+            columns: ["modelo_id"]
+            isOneToOne: false
+            referencedRelation: "modelos_folha_respostas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelos_folha_respostas: {
+        Row: {
+          avaliacao_id: string
+          colunas: number
+          created_at: string
+          id: string
+          linhas_por_coluna: number
+          orientacao: string
+          owner_id: string
+          snapshot: Json
+          versao: number
+        }
+        Insert: {
+          avaliacao_id: string
+          colunas: number
+          created_at?: string
+          id?: string
+          linhas_por_coluna: number
+          orientacao: string
+          owner_id: string
+          snapshot: Json
+          versao: number
+        }
+        Update: {
+          avaliacao_id?: string
+          colunas?: number
+          created_at?: string
+          id?: string
+          linhas_por_coluna?: number
+          orientacao?: string
+          owner_id?: string
+          snapshot?: Json
+          versao?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelos_folha_respostas_avaliacao_id_fkey"
+            columns: ["avaliacao_id"]
+            isOneToOne: false
+            referencedRelation: "avaliacoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -275,7 +374,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      criar_ou_obter_folha_respostas: {
+        Args: {
+          p_aluno_id: string | null
+          p_avaliacao_id: string
+          p_colunas: number
+          p_linhas_por_coluna: number
+          p_orientacao: string
+          p_snapshot: Json
+        }
+        Returns: {
+          codigo: string
+          folha_id: string
+          modelo_id: string
+          qr_payload: string
+          versao: number
+        }[]
+      }
     }
     Enums: {
       status_avaliacao:
