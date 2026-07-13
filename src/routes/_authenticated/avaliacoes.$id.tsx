@@ -1,13 +1,14 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   getAvaliacao, listQuestoes, listAlunosByTurma, listRespostasByAvaliacao,
   alternativas, corrigirQuestao, calcularNotaAluno,
   STATUS_LABEL, TIPO_LABEL,
-  type Questao, type TipoQuestao, type StatusAvaliacao,
+  type Aluno, type Avaliacao, type Questao, type TipoQuestao, type StatusAvaliacao,
 } from "@/lib/domain";
+import { AnswerSheet } from "@/components/answer-sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,9 +16,14 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Copy, Printer, FileText, LayoutGrid, ExternalLink } from "lucide-react";
+import {
+  ArrowLeft, Copy, Download, ExternalLink, FileImage, FileText,
+  LayoutGrid, Loader2, Plus, Printer, Trash2,
+} from "lucide-react";
+import { exportAnswerSheetAsPdf, exportAnswerSheetAsPng } from "@/lib/answer-sheet-export";
 import {
   DEFAULT_ANSWER_SHEET_LAYOUT,
+  type AnswerSheetLayout,
   type AnswerSheetOrientation,
 } from "@/lib/answer-sheet-layout";
 
@@ -63,7 +69,9 @@ function AvaliacaoDetail() {
 
         <TabsContent value="config" className="mt-4"><ConfigTab avaliacaoId={id} /></TabsContent>
         <TabsContent value="gabarito" className="mt-4"><GabaritoTab avaliacaoId={id} /></TabsContent>
-        <TabsContent value="folha" className="mt-4"><FolhaTab avaliacaoId={id} turmaId={av.data.turma_id} /></TabsContent>
+        <TabsContent value="folha" className="mt-4">
+          <FolhaTab avaliacao={av.data} questoes={questoes.data ?? []} />
+        </TabsContent>
         <TabsContent value="correcao" className="mt-4"><CorrecaoTab avaliacaoId={id} turmaId={av.data.turma_id} /></TabsContent>
         <TabsContent value="relatorio" className="mt-4"><RelatorioTab avaliacaoId={id} turmaId={av.data.turma_id} /></TabsContent>
       </Tabs>
@@ -274,11 +282,12 @@ function GabaritoTab({ avaliacaoId }: { avaliacaoId: string }) {
 }
 
 // ================= FOLHA =================
-function FolhaTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: string | null }) {
-  const navigate = useNavigate();
+function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Questao[] }) {
   const [orientation, setOrientation] = useState<AnswerSheetOrientation>(DEFAULT_ANSWER_SHEET_LAYOUT.orientation);
   const [columns, setColumns] = useState(DEFAULT_ANSWER_SHEET_LAYOUT.columns);
   const [rowsPerColumn, setRowsPerColumn] = useState(DEFAULT_ANSWER_SHEET_LAYOUT.rowsPerColumn);
+  const [preview, setPreview] = useState<{ alunoId?: string } | null>(null);
+  const turmaId = avaliacao.turma_id;
   const alunos = useQuery({
     queryKey: ["alunos", turmaId ?? ""],
     queryFn: () => turmaId ? listAlunosByTurma(turmaId) : Promise.resolve([]),
@@ -290,23 +299,30 @@ function FolhaTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: stri
     linhas: rowsPerColumn,
     orientacao: orientation,
   };
+  const layout: AnswerSheetLayout = {
+    columns: sheetSearch.colunas,
+    rowsPerColumn: sheetSearch.linhas,
+    orientation: sheetSearch.orientacao,
+  };
+  const previewAluno = preview?.alunoId
+    ? alunos.data?.find((aluno) => aluno.id === preview.alunoId)
+    : null;
 
   function changeOrientation(value: AnswerSheetOrientation) {
     setOrientation(value);
     if (value === "portrait" && columns > 4) setColumns(4);
   }
 
-  async function openAnswerSheet(aluno?: string) {
-    try {
-      await navigate({
-        to: "/avaliacoes/$id/folha",
-        params: { id: avaliacaoId },
-        search: aluno ? { ...sheetSearch, aluno } : sheetSearch,
-      });
-    } catch (error) {
-      console.error(error);
-      toast.error("Não foi possível abrir a folha de respostas.");
-    }
+  if (preview) {
+    return (
+      <EmbeddedAnswerSheetPreview
+        avaliacao={avaliacao}
+        questoes={questoes}
+        aluno={previewAluno}
+        layout={layout}
+        onBack={() => setPreview(null)}
+      />
+    );
   }
 
   return (
@@ -359,7 +375,7 @@ function FolhaTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: stri
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
-          <Button type="button" onClick={() => void openAnswerSheet()}>
+          <Button type="button" onClick={() => setPreview({})}>
             <FileText className="h-4 w-4 mr-2" />Visualizar folha genérica
           </Button>
           <span className="text-xs text-muted-foreground">
@@ -375,12 +391,134 @@ function FolhaTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: stri
               <button
                 key={a.id}
                 type="button"
-                onClick={() => void openAnswerSheet(a.id)}
+                onClick={() => setPreview({ alunoId: a.id })}
                 className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm hover:bg-muted/50">
                 <span>{a.chamada ? `${a.chamada}. ` : ""}{a.nome}</span>
                 <Printer className="h-4 w-4 text-muted-foreground" />
               </button>
             ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmbeddedAnswerSheetPreview({
+  avaliacao,
+  questoes,
+  aluno,
+  layout,
+  onBack,
+}: {
+  avaliacao: Avaliacao;
+  questoes: Questao[];
+  aluno?: Aluno | null;
+  layout: AnswerSheetLayout;
+  onBack: () => void;
+}) {
+  const exportRootRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState<"pdf" | "png" | null>(null);
+
+  async function exportFile(format: "pdf" | "png") {
+    if (!exportRootRef.current) return;
+    setExporting(format);
+    try {
+      if (format === "pdf") {
+        await exportAnswerSheetAsPdf(exportRootRef.current, avaliacao.titulo, layout.orientation);
+      } else {
+        await exportAnswerSheetAsPng(exportRootRef.current, avaliacao.titulo);
+      }
+      toast.success(format === "pdf" ? "PDF gerado com sucesso." : "Imagem PNG gerada com sucesso.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Não foi possível gerar o arquivo. Tente novamente.");
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  function printAnswerSheet() {
+    document.body.classList.add("printing-answer-sheet");
+    try {
+      window.print();
+    } finally {
+      document.body.classList.remove("printing-answer-sheet");
+    }
+  }
+
+  return (
+    <div className="answer-sheet-inline-preview overflow-hidden rounded-lg border border-border bg-muted/30">
+      <style>{`@media print { @page { size: A4 ${layout.orientation}; margin: 0; } }`}</style>
+
+      <div className="no-print flex flex-wrap items-center justify-between gap-3 border-b border-border bg-card p-4">
+        <div className="flex items-center gap-3">
+          <Button type="button" variant="outline" size="sm" onClick={onBack}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Voltar à configuração
+          </Button>
+          <div>
+            <div className="font-medium">
+              {aluno ? `Folha de ${aluno.nome}` : "Folha genérica"}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {layout.columns} coluna{layout.columns > 1 ? "s" : ""} · {layout.rowsPerColumn} linhas
+              · A4 {layout.orientation === "landscape" ? "paisagem" : "retrato"}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void exportFile("png")}
+            disabled={exporting !== null || questoes.length === 0}
+          >
+            {exporting === "png" ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <FileImage className="mr-2 h-4 w-4" />
+            )}
+            Baixar PNG
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void exportFile("pdf")}
+            disabled={exporting !== null || questoes.length === 0}
+          >
+            {exporting === "pdf" ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="mr-2 h-4 w-4" />
+            )}
+            Baixar PDF
+          </Button>
+          <Button
+            type="button"
+            onClick={printAnswerSheet}
+            disabled={exporting !== null || questoes.length === 0}
+          >
+            <Printer className="mr-2 h-4 w-4" />
+            Imprimir
+          </Button>
+        </div>
+      </div>
+
+      {questoes.length === 0 ? (
+        <div className="p-8 text-center text-muted-foreground">
+          Cadastre ao menos uma questão antes de gerar a folha.
+        </div>
+      ) : (
+        <div className="answer-sheet-inline-viewport max-w-full overflow-x-auto">
+          <div ref={exportRootRef} className="answer-sheet-export-root">
+            <AnswerSheet
+              avaliacao={avaliacao}
+              questoes={questoes}
+              aluno={aluno}
+              layout={layout}
+            />
           </div>
         </div>
       )}
