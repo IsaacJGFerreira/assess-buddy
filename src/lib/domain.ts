@@ -92,6 +92,30 @@ export interface IdentificacaoFolhaResposta {
   qrPayload: string;
 }
 
+const ANSWER_SHEET_SCHEMA_ERROR_CODES = new Set([
+  "42P01",
+  "42883",
+  "PGRST202",
+  "PGRST205",
+]);
+
+export function isAnswerSheetPersistenceUnavailable(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+
+  const candidate = error as { code?: unknown; message?: unknown };
+  const code = typeof candidate.code === "string" ? candidate.code : "";
+  const message = typeof candidate.message === "string"
+    ? candidate.message.toLowerCase()
+    : "";
+
+  return ANSWER_SHEET_SCHEMA_ERROR_CODES.has(code)
+    || (message.includes("schema cache") && (
+      message.includes("criar_ou_obter_folha_respostas")
+      || message.includes("modelos_folha_respostas")
+      || message.includes("folhas_respostas")
+    ));
+}
+
 // ---------- Fetchers ----------
 export async function listTurmas(): Promise<Turma[]> {
   const { data, error } = await supabase.from("turmas").select("*").order("nome");
