@@ -75,7 +75,7 @@ function AvaliacaoDetail() {
         <TabsContent value="folha" className="mt-4">
           <FolhaTab avaliacao={av.data} questoes={questoes.data ?? []} />
         </TabsContent>
-        <TabsContent value="correcao" className="mt-4"><CorrecaoTab avaliacaoId={id} turmaId={av.data.turma_id} /></TabsContent>
+        <TabsContent value="correcao" className="mt-4"><CorrecaoTab avaliacao={av.data} /></TabsContent>
         <TabsContent value="relatorio" className="mt-4"><RelatorioTab avaliacaoId={id} turmaId={av.data.turma_id} /></TabsContent>
       </Tabs>
     </div>
@@ -645,7 +645,9 @@ function EmbeddedAnswerSheetPreview({
 }
 
 // ================= CORREÇÃO =================
-function CorrecaoTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: string | null }) {
+function CorrecaoTab({ avaliacao }: { avaliacao: Avaliacao }) {
+  const avaliacaoId = avaliacao.id;
+  const turmaId = avaliacao.turma_id;
   const qc = useQueryClient();
   const questoes = useQuery({ queryKey: ["questoes", avaliacaoId], queryFn: () => listQuestoes(avaliacaoId) });
   const alunos = useQuery({
@@ -750,7 +752,7 @@ function CorrecaoTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: s
 
   return (
     <div className="space-y-6">
-      <AnswerSheetUploadPanel avaliacaoId={avaliacaoId} />
+      <AnswerSheetUploadPanel avaliacao={avaliacao} alunos={alunos.data ?? []} />
       <section className="space-y-3">
         <div>
           <h2 className="text-lg font-semibold">Correção manual</h2>

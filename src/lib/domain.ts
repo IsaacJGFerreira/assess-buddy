@@ -107,6 +107,11 @@ export interface DigitalizacaoFolha {
   largura_px: number;
   altura_px: number;
   tamanho_bytes: number;
+  modelo_id: string | null;
+  pagina_modelo: number | null;
+  resultado_leitura: Json | null;
+  confianca_leitura: number | null;
+  processado_at: string | null;
   status: "preparada" | "identificada" | "revisao" | "processada" | "erro";
   created_at: string;
   updated_at: string;
@@ -212,6 +217,16 @@ export async function getLatestAnswerSheetModel(
     .maybeSingle();
   if (error) throw error;
   return data as ModeloFolhaResposta | null;
+}
+
+export async function listAnswerSheetModels(avaliacaoId: string): Promise<ModeloFolhaResposta[]> {
+  const { data, error } = await supabase
+    .from("modelos_folha_respostas")
+    .select("*")
+    .eq("avaliacao_id", avaliacaoId)
+    .order("versao", { ascending: false });
+  if (error) throw error;
+  return data as ModeloFolhaResposta[];
 }
 
 export async function createOrGetAnswerSheet({
@@ -333,10 +348,72 @@ export async function deleteAnswerSheetScan(
     .remove([scan.storage_path]);
   if (storageError) throw storageError;
 
+  const { error } = await supabase.from("digitalizacoes_folhas").delete().eq("id", scan.id);
+  if (error) throw error;
+}
+
+export async function downloadAnswerSheetScan(
+  scan: Pick<DigitalizacaoFolha, "storage_path">,
+): Promise<Blob> {
+  const { data, error } = await supabase.storage
+    .from("folhas-digitalizadas")
+    .download(scan.storage_path);
+  if (error) throw error;
+  return data;
+}
+
+export async function saveAnswerSheetScanReading({
+  scanId,
+  alunoId,
+  modeloId,
+  pagina,
+  resultado,
+  confianca,
+}: {
+  scanId: string;
+  alunoId: string;
+  modeloId: string;
+  pagina: number;
+  resultado: Json;
+  confianca: number;
+}): Promise<void> {
   const { error } = await supabase
     .from("digitalizacoes_folhas")
-    .delete()
-    .eq("id", scan.id);
+    .update({
+      aluno_id: alunoId,
+      modelo_id: modeloId,
+      pagina_modelo: pagina,
+      resultado_leitura: resultado,
+      confianca_leitura: Math.min(1, Math.max(0, confianca)),
+      status: "revisao",
+      processado_at: null,
+    })
+    .eq("id", scanId)
+    .select("id")
+    .single();
+  if (error) throw error;
+}
+
+export async function confirmAnswerSheetScanReading({
+  scanId,
+  alunoId,
+  modeloId,
+  pagina,
+  resultado,
+}: {
+  scanId: string;
+  alunoId: string;
+  modeloId: string;
+  pagina: number;
+  resultado: Json;
+}): Promise<void> {
+  const { error } = await supabase.rpc("confirmar_leitura_folha", {
+    p_digitalizacao_id: scanId,
+    p_aluno_id: alunoId,
+    p_modelo_id: modeloId,
+    p_pagina: pagina,
+    p_resultado: resultado,
+  });
   if (error) throw error;
 }
 
