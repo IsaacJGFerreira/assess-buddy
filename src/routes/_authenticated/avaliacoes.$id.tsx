@@ -5,8 +5,10 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   getAvaliacao, listQuestoes, listAlunosByTurma, listRespostasByAvaliacao,
   alternativas, corrigirQuestao, calcularNotaAluno,
+  createOrGetAnswerSheet, getLatestAnswerSheetModel,
   STATUS_LABEL, TIPO_LABEL,
-  type Aluno, type Avaliacao, type Questao, type TipoQuestao, type StatusAvaliacao,
+  type Aluno, type Avaliacao, type IdentificacaoFolhaResposta, type Questao,
+  type TipoQuestao, type StatusAvaliacao,
 } from "@/lib/domain";
 import { AnswerSheet } from "@/components/answer-sheet";
 import { Button } from "@/components/ui/button";
@@ -283,17 +285,35 @@ function GabaritoTab({ avaliacaoId }: { avaliacaoId: string }) {
 
 // ================= FOLHA =================
 function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Questao[] }) {
-  const [orientation, setOrientation] = useState<AnswerSheetOrientation>(DEFAULT_ANSWER_SHEET_LAYOUT.orientation);
-  const [columns, setColumns] = useState(DEFAULT_ANSWER_SHEET_LAYOUT.columns);
-  const [rowsPerColumn, setRowsPerColumn] = useState(DEFAULT_ANSWER_SHEET_LAYOUT.rowsPerColumn);
-  const [preview, setPreview] = useState<{ alunoId?: string } | null>(null);
+  const queryClient = useQueryClient();
+  const [orientationOverride, setOrientationOverride] = useState<AnswerSheetOrientation | null>(null);
+  const [columnsOverride, setColumnsOverride] = useState<number | null>(null);
+  const [rowsOverride, setRowsOverride] = useState<number | null>(null);
+  const [preview, setPreview] = useState<{
+    alunoId?: string;
+    identification: IdentificacaoFolhaResposta;
+  } | null>(null);
   const turmaId = avaliacao.turma_id;
+  const savedModel = useQuery({
+    queryKey: ["modelo-folha", avaliacao.id],
+    queryFn: () => getLatestAnswerSheetModel(avaliacao.id),
+  });
   const alunos = useQuery({
     queryKey: ["alunos", turmaId ?? ""],
     queryFn: () => turmaId ? listAlunosByTurma(turmaId) : Promise.resolve([]),
     enabled: !!turmaId,
   });
+  const orientation = orientationOverride
+    ?? savedModel.data?.orientacao
+    ?? DEFAULT_ANSWER_SHEET_LAYOUT.orientation;
   const maxColumns = orientation === "portrait" ? 4 : 6;
+  const columns = Math.min(
+    columnsOverride ?? savedModel.data?.colunas ?? DEFAULT_ANSWER_SHEET_LAYOUT.columns,
+    maxColumns,
+  );
+  const rowsPerColumn = rowsOverride
+    ?? savedModel.data?.linhas_por_coluna
+    ?? DEFAULT_ANSWER_SHEET_LAYOUT.rowsPerColumn;
   const sheetSearch = {
     colunas: Math.min(columns, maxColumns),
     linhas: rowsPerColumn,
@@ -307,10 +327,25 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
   const previewAluno = preview?.alunoId
     ? alunos.data?.find((aluno) => aluno.id === preview.alunoId)
     : null;
+  const generateSheet = useMutation({
+    mutationFn: ({ alunoId }: { alunoId?: string }) => createOrGetAnswerSheet({
+      avaliacao,
+      questoes,
+      alunoId,
+      layout,
+    }),
+    onSuccess: (identification, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["modelo-folha", avaliacao.id] });
+      setPreview({ alunoId: variables.alunoId, identification });
+      toast.success(`Folha ${identification.codigo} · versão ${identification.versao}.`);
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
 
   function changeOrientation(value: AnswerSheetOrientation) {
-    setOrientation(value);
-    if (value === "portrait" && columns > 4) setColumns(4);
+    setOrientationOverride(value);
+    if (value === "portrait" && columns > 4) setColumnsOverride(4);
+    if (value === "landscape" && rowsPerColumn > 25) setRowsOverride(25);
   }
 
   if (preview) {
@@ -320,6 +355,7 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
         questoes={questoes}
         aluno={previewAluno}
         layout={layout}
+        identification={preview.identification}
         onBack={() => setPreview(null)}
       />
     );
@@ -333,8 +369,16 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
           <h3 className="font-semibold">Configuração da folha de respostas</h3>
         </div>
         <p className="text-sm text-muted-foreground">
-          Organize a grade antes de visualizar. A prévia permite imprimir e baixar a folha em PDF ou PNG.
+          Organize a grade antes de visualizar. O modelo é salvo e versionado automaticamente.
         </p>
+
+        <div className="mt-3 inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+          {savedModel.isLoading
+            ? "Carregando modelo salvo…"
+            : savedModel.data
+              ? `Modelo salvo · versão ${savedModel.data.versao}`
+              : "O primeiro modelo será criado ao visualizar"}
+        </div>
 
         <div className="grid gap-4 mt-5 md:grid-cols-3">
           <div className="space-y-1.5">
@@ -349,7 +393,10 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
           </div>
           <div className="space-y-1.5">
             <Label>Colunas</Label>
-            <Select value={String(columns)} onValueChange={(value) => setColumns(Number(value))}>
+            <Select
+              value={String(columns)}
+              onValueChange={(value) => setColumnsOverride(Number(value))}
+            >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {Array.from({ length: maxColumns }, (_, index) => index + 1).map((value) => (
@@ -368,15 +415,24 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
               value={rowsPerColumn}
               onChange={(event) => {
                 const maximum = orientation === "landscape" ? 25 : 35;
-                setRowsPerColumn(Math.min(maximum, Math.max(5, Number(event.target.value) || 5)));
+                setRowsOverride(Math.min(maximum, Math.max(5, Number(event.target.value) || 5)));
               }}
             />
           </div>
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
-          <Button type="button" onClick={() => setPreview({})}>
-            <FileText className="h-4 w-4 mr-2" />Visualizar folha genérica
+          <Button
+            type="button"
+            onClick={() => generateSheet.mutate({})}
+            disabled={generateSheet.isPending || savedModel.isLoading || questoes.length === 0}
+          >
+            {generateSheet.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <FileText className="h-4 w-4 mr-2" />
+            )}
+            Salvar e visualizar folha genérica
           </Button>
           <span className="text-xs text-muted-foreground">
             Capacidade de {sheetSearch.colunas * rowsPerColumn} questões por página.
@@ -391,8 +447,9 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
               <button
                 key={a.id}
                 type="button"
-                onClick={() => setPreview({ alunoId: a.id })}
-                className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm hover:bg-muted/50">
+                onClick={() => generateSheet.mutate({ alunoId: a.id })}
+                disabled={generateSheet.isPending || savedModel.isLoading || questoes.length === 0}
+                className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50">
                 <span>{a.chamada ? `${a.chamada}. ` : ""}{a.nome}</span>
                 <Printer className="h-4 w-4 text-muted-foreground" />
               </button>
@@ -409,12 +466,14 @@ function EmbeddedAnswerSheetPreview({
   questoes,
   aluno,
   layout,
+  identification,
   onBack,
 }: {
   avaliacao: Avaliacao;
   questoes: Questao[];
   aluno?: Aluno | null;
   layout: AnswerSheetLayout;
+  identification: IdentificacaoFolhaResposta;
   onBack: () => void;
 }) {
   const exportRootRef = useRef<HTMLDivElement>(null);
@@ -425,9 +484,16 @@ function EmbeddedAnswerSheetPreview({
     setExporting(format);
     try {
       if (format === "pdf") {
-        await exportAnswerSheetAsPdf(exportRootRef.current, avaliacao.titulo, layout.orientation);
+        await exportAnswerSheetAsPdf(
+          exportRootRef.current,
+          `${avaliacao.titulo}-${identification.codigo}`,
+          layout.orientation,
+        );
       } else {
-        await exportAnswerSheetAsPng(exportRootRef.current, avaliacao.titulo);
+        await exportAnswerSheetAsPng(
+          exportRootRef.current,
+          `${avaliacao.titulo}-${identification.codigo}`,
+        );
       }
       toast.success(format === "pdf" ? "PDF gerado com sucesso." : "Imagem PNG gerada com sucesso.");
     } catch (error) {
@@ -464,6 +530,9 @@ function EmbeddedAnswerSheetPreview({
             <div className="text-xs text-muted-foreground">
               {layout.columns} coluna{layout.columns > 1 ? "s" : ""} · {layout.rowsPerColumn} linhas
               · A4 {layout.orientation === "landscape" ? "paisagem" : "retrato"}
+            </div>
+            <div className="mt-1 font-mono text-xs text-muted-foreground">
+              {identification.codigo} · versão {identification.versao}
             </div>
           </div>
         </div>
@@ -518,6 +587,11 @@ function EmbeddedAnswerSheetPreview({
               questoes={questoes}
               aluno={aluno}
               layout={layout}
+              identification={{
+                code: identification.codigo,
+                version: identification.versao,
+                qrPayload: identification.qrPayload,
+              }}
             />
           </div>
         </div>
