@@ -3,17 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   CircleAlert,
   Eye,
   FileScan,
-  ListChecks,
   Loader2,
   Save,
   ScanLine,
   WandSparkles,
-  ZoomIn,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -53,6 +49,8 @@ import {
   type Questao,
 } from "@/lib/domain";
 
+const NO_STUDENT_VALUE = "__sem_aluno__";
+
 export function AnswerSheetMarkReader({
   scan,
   avaliacao,
@@ -81,9 +79,6 @@ export function AnswerSheetMarkReader({
     averageConfidence: number;
   } | null>(() => restoreSavedMeta(scan.resultado_leitura));
   const [overlay, setOverlay] = useState<string | null>(null);
-  const [evidenceByQuestion, setEvidenceByQuestion] = useState<Record<string, string>>({});
-  const [reviewView, setReviewView] = useState<"pending" | "all">("pending");
-  const [pendingIndex, setPendingIndex] = useState(0);
   const [hasUnsavedReview, setHasUnsavedReview] = useState(false);
 
   const models = useQuery({
@@ -112,37 +107,8 @@ export function AnswerSheetMarkReader({
     if (pages.length > 0 && pageNumber > pages.length) setPageNumber(1);
   }, [pageNumber, pages.length]);
 
-  useEffect(() => {
-    if (
-      !analysisMeta ||
-      Object.keys(evidenceByQuestion).length > 0 ||
-      !readings.some(
-        (reading) =>
-          reading.requiresReview && reading.samples.some((sample) => sample.imageRadius > 0),
-      )
-    ) {
-      return;
-    }
-    let cancelled = false;
-    void downloadAnswerSheetScan(scan)
-      .then(decodeScan)
-      .then(({ image }) => {
-        try {
-          const evidence = createQuestionEvidenceImages(image, readings, analysisMeta.threshold);
-          if (!cancelled) setEvidenceByQuestion(evidence);
-        } finally {
-          image.close();
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [analysisMeta, evidenceByQuestion, readings, scan]);
-
   const analyze = useMutation({
     mutationFn: async () => {
-      if (!studentId) throw new Error("Selecione o aluno antes de analisar a folha.");
       if (!selectedModel || !restored || restored instanceof Error) {
         throw restored instanceof Error ? restored : new Error("Selecione uma versão da folha.");
       }
@@ -156,11 +122,9 @@ export function AnswerSheetMarkReader({
       const { raster, image } = await decodeScan(blob);
       let result: AnswerSheetOmrAnalysis;
       let nextOverlay: string;
-      let nextEvidence: Record<string, string>;
       try {
         result = analyzeAnswerSheetMarks(raster, geometry);
         nextOverlay = createAnalysisOverlay(image, result);
-        nextEvidence = createQuestionEvidenceImages(image, result.readings, result.threshold);
       } finally {
         image.close();
       }
@@ -173,15 +137,15 @@ export function AnswerSheetMarkReader({
       });
       await saveAnswerSheetScanReading({
         scanId: scan.id,
-        alunoId: studentId,
+        alunoId: studentId || null,
         modeloId: selectedModel.id,
         pagina: pageNumber,
         resultado: payload,
         confianca: result.averageConfidence,
       });
-      return { result, overlay: nextOverlay, evidence: nextEvidence };
+      return { result, overlay: nextOverlay };
     },
-    onSuccess: async ({ result, overlay: nextOverlay, evidence }) => {
+    onSuccess: async ({ result, overlay: nextOverlay }) => {
       setReadings(result.readings);
       setAnalysisMeta({
         threshold: result.threshold,
@@ -189,9 +153,6 @@ export function AnswerSheetMarkReader({
         averageConfidence: result.averageConfidence,
       });
       setOverlay(nextOverlay);
-      setEvidenceByQuestion(evidence);
-      setPendingIndex(0);
-      setReviewView("pending");
       setHasUnsavedReview(false);
       reviewRevisionRef.current = 0;
       await queryClient.invalidateQueries({ queryKey: ["answer-sheet-scans", avaliacao.id] });
@@ -220,7 +181,7 @@ export function AnswerSheetMarkReader({
       reviewedReadings: OmrQuestionReading[];
       revision: number;
     }) => {
-      if (!studentId || !selectedModel || !analysisMeta) {
+      if (!selectedModel || !analysisMeta) {
         throw new Error("A leitura precisa estar completa antes de salvar a conferência.");
       }
       const payload = buildReadingPayload(reviewedReadings, {
@@ -232,7 +193,7 @@ export function AnswerSheetMarkReader({
       });
       await saveAnswerSheetScanReading({
         scanId: scan.id,
-        alunoId: studentId,
+        alunoId: studentId || null,
         modeloId: selectedModel.id,
         pagina: pageNumber,
         resultado: payload,
@@ -310,8 +271,6 @@ export function AnswerSheetMarkReader({
     setReadings([]);
     setAnalysisMeta(null);
     setOverlay(null);
-    setEvidenceByQuestion({});
-    setPendingIndex(0);
     setHasUnsavedReview(false);
     reviewRevisionRef.current = 0;
   }
@@ -369,16 +328,6 @@ export function AnswerSheetMarkReader({
   const confidentCount = readings.filter((reading) => reading.status === "confident").length;
   const blankCount = readings.filter((reading) => reading.status === "blank").length;
   const reviewedCount = readings.filter((reading) => reading.status === "reviewed").length;
-  const multipleCount = unresolved.filter((reading) => reading.reviewReason === "multiple").length;
-  const weakCount = unresolved.filter((reading) => reading.reviewReason === "weak").length;
-  const incompleteCount = unresolved.filter(
-    (reading) => reading.reviewReason === "incomplete",
-  ).length;
-  const currentPendingIndex = Math.min(pendingIndex, Math.max(0, unresolved.length - 1));
-  const currentPending = unresolved[currentPendingIndex] ?? null;
-  const currentPendingQuestion = currentPending
-    ? (questionsById.get(currentPending.questionId) ?? null)
-    : null;
 
   return (
     <section className="space-y-5 rounded-lg border border-border bg-card p-5">
@@ -397,7 +346,8 @@ export function AnswerSheetMarkReader({
             <ScanLine className="h-5 w-5" /> Leitura automática das marcações
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {scan.arquivo_original} · selecione a versão, a página e o aluno antes de analisar.
+            {scan.arquivo_original} · selecione a versão e a página. O aluno pode ser vinculado
+            depois da leitura.
           </p>
         </div>
         {analysisMeta && (
@@ -409,18 +359,16 @@ export function AnswerSheetMarkReader({
 
       <div className="grid gap-4 rounded-lg border border-border bg-muted/20 p-4 md:grid-cols-3">
         <div className="space-y-1.5">
-          <Label>Aluno</Label>
+          <Label>Aluno (opcional para leitura)</Label>
           <Select
-            value={studentId}
-            onValueChange={(value) => {
-              setStudentId(value);
-              clearAnalysis();
-            }}
+            value={studentId || NO_STUDENT_VALUE}
+            onValueChange={(value) => setStudentId(value === NO_STUDENT_VALUE ? "" : value)}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Selecione o aluno" />
+              <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value={NO_STUDENT_VALUE}>Sem aluno vinculado</SelectItem>
               {alunos.map((student) => (
                 <SelectItem key={student.id} value={student.id}>
                   {student.chamada ? `${student.chamada}. ` : ""}
@@ -472,7 +420,7 @@ export function AnswerSheetMarkReader({
         <Button
           type="button"
           onClick={() => analyze.mutate()}
-          disabled={!studentId || !selectedModelId || analyze.isPending || pages.length === 0}
+          disabled={!selectedModelId || analyze.isPending || pages.length === 0}
         >
           {analyze.isPending ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -521,103 +469,77 @@ export function AnswerSheetMarkReader({
             </div>
           )}
 
-          {unresolved.length > 0 && (
-            <div className="flex gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-              <p>
-                As linhas amarelas têm marca fraca, dupla ou incompleta. Escolha uma resposta ou
-                confirme “Em branco”. Nesta folha: {multipleCount} dupla(s), {weakCount} duvidosa(s)
-                e {incompleteCount} incompleta(s).
-              </p>
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="inline-flex rounded-lg border border-border bg-muted/30 p-1">
-              <Button
-                type="button"
-                size="sm"
-                variant={reviewView === "pending" ? "secondary" : "ghost"}
-                onClick={() => setReviewView("pending")}
-              >
-                <ListChecks className="mr-2 h-4 w-4" /> Pendências ({unresolved.length})
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={reviewView === "all" ? "secondary" : "ghost"}
-                onClick={() => setReviewView("all")}
-              >
-                Todas ({readings.length})
-              </Button>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={!hasUnsavedReview || saveReview.isPending}
-              onClick={() =>
-                saveReview.mutate({
-                  reviewedReadings: readings,
-                  revision: reviewRevisionRef.current,
-                })
-              }
-            >
-              {saveReview.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          <details className="group overflow-hidden rounded-lg border border-border bg-card">
+            <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-4 py-3 marker:content-none">
+              <span>
+                <span className="font-medium">Correção manual · todas as respostas</span>
+                <span className="ml-2 text-xs text-muted-foreground">({readings.length})</span>
+              </span>
+              {unresolved.length > 0 ? (
+                <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-950">
+                  <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                  {unresolved.length} inconsistência{unresolved.length > 1 ? "s" : ""}
+                </span>
               ) : (
-                <Save className="mr-2 h-4 w-4" />
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+                  <CheckCircle2 className="h-4 w-4" /> Sem inconsistências
+                </span>
               )}
-              {hasUnsavedReview ? "Salvar conferência" : "Conferência salva"}
-            </Button>
-          </div>
-
-          {reviewView === "pending" ? (
-            currentPending && currentPendingQuestion && analysisMeta ? (
-              <UncertainReadingReview
-                reading={currentPending}
-                question={currentPendingQuestion}
-                evidence={evidenceByQuestion[currentPending.questionId]}
-                threshold={analysisMeta.threshold}
-                index={currentPendingIndex}
-                total={unresolved.length}
-                onPrevious={() => setPendingIndex((value) => Math.max(0, value - 1))}
-                onNext={() =>
-                  setPendingIndex((value) => Math.min(unresolved.length - 1, value + 1))
-                }
-                onChange={(value, resolved) =>
-                  reviewReading(currentPending.questionId, value, resolved)
-                }
-              />
-            ) : (
-              <div className="flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
-                <CheckCircle2 className="h-5 w-5 shrink-0" />
-                Todas as respostas duvidosas foram conferidas.
+            </summary>
+            <div className="space-y-3 border-t border-border p-3">
+              {unresolved.length > 0 && (
+                <p className="flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                  <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                  Os pontos laranja indicam leituras fracas, duplas ou incompletas. Ajuste apenas o
+                  que precisar.
+                </p>
+              )}
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!hasUnsavedReview || saveReview.isPending}
+                  onClick={() =>
+                    saveReview.mutate({
+                      reviewedReadings: readings,
+                      revision: reviewRevisionRef.current,
+                    })
+                  }
+                >
+                  {saveReview.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 h-4 w-4" />
+                  )}
+                  {hasUnsavedReview ? "Salvar conferência" : "Conferência salva"}
+                </Button>
               </div>
-            )
-          ) : (
-            <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
-              {readings.map((reading) => {
-                const question = questionsById.get(reading.questionId);
-                if (!question) return null;
-                return (
-                  <ReadingReviewRow
-                    key={reading.questionId}
-                    question={question}
-                    reading={reading}
-                    onChange={(value, resolved) =>
-                      reviewReading(reading.questionId, value, resolved)
-                    }
-                  />
-                );
-              })}
+              <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+                {readings.map((reading) => {
+                  const question = questionsById.get(reading.questionId);
+                  if (!question) return null;
+                  return (
+                    <ReadingReviewRow
+                      key={reading.questionId}
+                      question={question}
+                      reading={reading}
+                      onChange={(value, resolved) =>
+                        reviewReading(reading.questionId, value, resolved)
+                      }
+                    />
+                  );
+                })}
+              </div>
             </div>
-          )}
+          </details>
 
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-4">
             <div>
               <div className="font-medium">Confirmar lançamento</div>
               <p className="text-xs text-muted-foreground">
-                As respostas desta página substituirão os valores atuais do aluno selecionado.
+                {studentId
+                  ? "As respostas desta página substituirão os valores atuais do aluno selecionado."
+                  : "A leitura já está salva. Selecione um aluno apenas quando quiser lançar as respostas."}
               </p>
             </div>
             <Button
@@ -631,7 +553,9 @@ export function AnswerSheetMarkReader({
                   confirm.mutate();
                 }
               }}
-              disabled={unresolved.length > 0 || saveReview.isPending || confirm.isPending}
+              disabled={
+                !studentId || unresolved.length > 0 || saveReview.isPending || confirm.isPending
+              }
             >
               {confirm.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -668,127 +592,6 @@ export function AnswerSheetMarkReader({
   );
 }
 
-function UncertainReadingReview({
-  question,
-  reading,
-  evidence,
-  threshold,
-  index,
-  total,
-  onPrevious,
-  onNext,
-  onChange,
-}: {
-  question: Questao;
-  reading: OmrQuestionReading;
-  evidence?: string;
-  threshold: number;
-  index: number;
-  total: number;
-  onPrevious: () => void;
-  onNext: () => void;
-  onChange: (value: string | null, resolved?: boolean) => void;
-}) {
-  const reason = reading.reviewReason ?? "weak";
-  const suspectSamples = [...reading.samples]
-    .filter((sample) => sample.score >= threshold - 0.05)
-    .sort((left, right) => right.score - left.score)
-    .slice(0, question.tipo === "num" ? 12 : 7);
-
-  return (
-    <section className="overflow-hidden rounded-xl border-2 border-amber-300 bg-card shadow-sm">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3">
-        <div>
-          <div className="text-xs font-medium uppercase tracking-wide text-amber-800">
-            Pendência {index + 1} de {total}
-          </div>
-          <h3 className="text-lg font-semibold">Questão {question.numero}</h3>
-        </div>
-        <div className="flex items-center gap-2">
-          <ReviewReasonBadge reason={reason} />
-          <Button
-            type="button"
-            size="icon"
-            variant="outline"
-            onClick={onPrevious}
-            disabled={index === 0}
-            aria-label="Pendência anterior"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="outline"
-            onClick={onNext}
-            disabled={index >= total - 1}
-            aria-label="Próxima pendência"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      </header>
-
-      <div className="grid gap-5 p-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(300px,0.7fr)]">
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <ZoomIn className="h-4 w-4" /> Recorte ampliado da marcação
-          </div>
-          {evidence ? (
-            <div className="overflow-hidden rounded-lg border border-slate-300 bg-slate-100 p-2">
-              <img
-                src={evidence}
-                alt={`Recorte ampliado da questão ${question.numero}`}
-                className="mx-auto max-h-72 max-w-full rounded bg-white"
-              />
-            </div>
-          ) : (
-            <div className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
-              Reanalise esta folha para gerar o recorte ampliado da questão.
-            </div>
-          )}
-          <p className="text-sm text-muted-foreground">{reviewReasonDescription(reason)}</p>
-          {suspectSamples.length > 0 && (
-            <div>
-              <div className="mb-2 text-xs font-medium text-muted-foreground">
-                Marcas mais fortes encontradas
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {suspectSamples.map((sample, sampleIndex) => (
-                  <span
-                    key={`${sample.digitIndex ?? "option"}-${sample.value}-${sampleIndex}`}
-                    className={`rounded-full border px-2.5 py-1 text-xs font-medium ${sample.score >= threshold ? "border-amber-300 bg-amber-100 text-amber-950" : "border-slate-200 bg-slate-50 text-slate-700"}`}
-                  >
-                    {question.tipo === "num" && sample.digitIndex !== null
-                      ? `Casa ${sample.digitIndex + 1}: ${sample.value}`
-                      : sample.value}
-                    {` · ${formatPercent(sample.score)}`}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
-          <div>
-            <div className="font-semibold">Qual é a resposta correta?</div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Escolha uma opção ou confirme que a questão ficou em branco.
-            </p>
-          </div>
-          <ReadingAnswerControl
-            question={question}
-            reading={reading}
-            onChange={onChange}
-            spacious
-          />
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function ReadingReviewRow({
   question,
   reading,
@@ -812,7 +615,15 @@ function ReadingReviewRow({
       className={`grid gap-3 px-4 py-3 sm:grid-cols-[70px_1fr_150px] sm:items-center ${needsReview ? "bg-amber-50" : "bg-card"}`}
     >
       <div>
-        <div className="font-semibold">Questão {question.numero}</div>
+        <div className="flex items-center gap-2 font-semibold">
+          {needsReview && (
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500"
+              title="Leitura com inconsistência"
+            />
+          )}
+          Questão {question.numero}
+        </div>
         <div className="text-[11px] text-muted-foreground">{formatPercent(reading.confidence)}</div>
       </div>
       <ReadingAnswerControl question={question} reading={reading} onChange={onChange} />
@@ -885,28 +696,6 @@ function ReadingAnswerControl({
       </Button>
     </div>
   );
-}
-
-function ReviewReasonBadge({ reason }: { reason: OmrReviewReason }) {
-  return (
-    <span className="rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-semibold text-amber-900">
-      {reason === "multiple"
-        ? "Marcação dupla"
-        : reason === "incomplete"
-          ? "Resposta incompleta"
-          : "Marca duvidosa"}
-    </span>
-  );
-}
-
-function reviewReasonDescription(reason: OmrReviewReason): string {
-  if (reason === "multiple") {
-    return "Mais de uma bolha ultrapassou o limite de preenchimento. Confira visualmente antes de escolher a resposta.";
-  }
-  if (reason === "incomplete") {
-    return "A resposta numérica tem uma ou mais casas sem marcação confiável.";
-  }
-  return "A marca ficou próxima do limite de confiança ou muito parecida com outra alternativa.";
 }
 
 function ReadingStat({
@@ -1010,72 +799,6 @@ function createAnalysisOverlay(image: ImageBitmap, analysis: AnswerSheetOmrAnaly
     }
   }
   return canvas.toDataURL("image/jpeg", 0.84);
-}
-
-function createQuestionEvidenceImages(
-  image: ImageBitmap,
-  readings: OmrQuestionReading[],
-  threshold: number,
-): Record<string, string> {
-  const evidence: Record<string, string> = {};
-  for (const reading of readings) {
-    if (!reading.requiresReview) continue;
-    const samples = reading.samples.filter(
-      (sample) => sample.imageRadius > 0 && sample.imageX > 0 && sample.imageY > 0,
-    );
-    if (samples.length === 0) continue;
-    const maximumRadius = Math.max(...samples.map((sample) => sample.imageRadius));
-    const left = Math.max(
-      0,
-      Math.floor(Math.min(...samples.map((sample) => sample.imageX)) - maximumRadius * 5),
-    );
-    const right = Math.min(
-      image.width,
-      Math.ceil(Math.max(...samples.map((sample) => sample.imageX)) + maximumRadius * 5),
-    );
-    const top = Math.max(
-      0,
-      Math.floor(Math.min(...samples.map((sample) => sample.imageY)) - maximumRadius * 4),
-    );
-    const bottom = Math.min(
-      image.height,
-      Math.ceil(Math.max(...samples.map((sample) => sample.imageY)) + maximumRadius * 4),
-    );
-    const sourceWidth = Math.max(1, right - left);
-    const sourceHeight = Math.max(1, bottom - top);
-    const scale = Math.min(2, 900 / sourceWidth, 420 / sourceHeight);
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(sourceWidth * scale));
-    canvas.height = Math.max(1, Math.round(sourceHeight * scale));
-    const context = canvas.getContext("2d");
-    if (!context) continue;
-    context.drawImage(
-      image,
-      left,
-      top,
-      sourceWidth,
-      sourceHeight,
-      0,
-      0,
-      canvas.width,
-      canvas.height,
-    );
-    context.lineWidth = Math.max(2, maximumRadius * scale * 0.18);
-    for (const sample of samples) {
-      const x = (sample.imageX - left) * scale;
-      const y = (sample.imageY - top) * scale;
-      const radius = Math.max(5, sample.imageRadius * scale * 1.15);
-      context.beginPath();
-      context.arc(x, y, radius, 0, Math.PI * 2);
-      context.strokeStyle = sample.score >= threshold ? "#f59e0b" : "rgba(37, 99, 235, 0.72)";
-      context.stroke();
-      if (isReadSample(reading, sample, threshold)) {
-        drawReadPoint(context, x, y, radius, "#f59e0b");
-      }
-    }
-    evidence[reading.questionId] = canvas.toDataURL("image/jpeg", 0.88);
-  }
-  return evidence;
 }
 
 function isReadSample(

@@ -369,6 +369,10 @@ export function AnswerSheetUploadPanel({
             )}
           </div>
 
+          <p className="rounded-md border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-medium text-cyan-950">
+            Encaixe cada quadrado preto dentro da janela azul correspondente.
+          </p>
+
           <div className="relative h-[min(62vh,620px)] min-h-96 overflow-hidden rounded-lg bg-slate-950">
             {source && !loadingSource && (
               <Cropper
@@ -400,11 +404,6 @@ export function AnswerSheetUploadPanel({
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white">
                 <Loader2 className="h-7 w-7 animate-spin" />
                 <span className="text-sm">Preparando visualização…</span>
-              </div>
-            )}
-            {source && !loadingSource && (
-              <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full border border-cyan-200/70 bg-slate-950/85 px-3 py-1.5 text-center text-xs font-medium text-white shadow">
-                Encaixe cada quadrado preto dentro da janela azul correspondente
               </div>
             )}
           </div>
@@ -529,68 +528,75 @@ export function AnswerSheetUploadPanel({
             </p>
           ) : scans.data?.length ? (
             <div className="mt-3 divide-y divide-border overflow-hidden rounded-md border border-border">
-              {scans.data.map((scan) => (
-                <div
-                  key={scan.id}
-                  className="flex flex-wrap items-center justify-between gap-3 px-3 py-3"
-                >
-                  <div className="flex min-w-0 items-start gap-3">
-                    <span className="rounded-md bg-emerald-50 p-2 text-emerald-700">
-                      <FileImage className="h-4 w-4" />
-                    </span>
-                    <div className="min-w-0">
-                      <div
-                        className="max-w-96 truncate text-sm font-medium"
-                        title={scan.arquivo_original}
-                      >
-                        {scan.arquivo_original}
-                      </div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">
-                        {scan.mime_original === "application/pdf"
-                          ? `Página ${scan.pagina_origem} · `
-                          : ""}
-                        {scan.largura_px} × {scan.altura_px} px · {formatBytes(scan.tamanho_bytes)}{" "}
-                        · {formatDate(scan.created_at)}
-                      </div>
-                      <span className="mt-1 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-                        {STATUS_LABEL[scan.status]}
+              {scans.data.map((scan) => {
+                const student = scan.aluno_id
+                  ? alunos.find((item) => item.id === scan.aluno_id)
+                  : null;
+                const studentLabel = student?.nome ?? "Sem aluno vinculado";
+                return (
+                  <div
+                    key={scan.id}
+                    className="flex flex-wrap items-center justify-between gap-3 px-3 py-3"
+                  >
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="rounded-md bg-emerald-50 p-2 text-emerald-700">
+                        <FileImage className="h-4 w-4" />
                       </span>
+                      <div className="min-w-0">
+                        <div className="max-w-96 truncate text-sm font-medium" title={studentLabel}>
+                          {studentLabel}
+                        </div>
+                        <div
+                          className="mt-0.5 max-w-96 truncate text-xs text-muted-foreground"
+                          title={scan.arquivo_original}
+                        >
+                          {scan.arquivo_original} ·{" "}
+                          {scan.mime_original === "application/pdf"
+                            ? `Página ${scan.pagina_origem} · `
+                            : ""}
+                          {scan.largura_px} × {scan.altura_px} px ·{" "}
+                          {formatBytes(scan.tamanho_bytes)} · {formatDate(scan.created_at)}
+                        </div>
+                        <span className="mt-1 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                          {STATUS_LABEL[scan.status]}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setActiveScan(scan)}
+                      >
+                        <ScanLine className="mr-2 h-4 w-4" />
+                        {scan.status === "revisao"
+                          ? "Revisar leitura"
+                          : scan.status === "processada"
+                            ? "Ver leitura"
+                            : "Ler marcações"}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        disabled={remove.isPending}
+                        onClick={() => {
+                          if (window.confirm("Remover esta folha preparada?")) remove.mutate(scan);
+                        }}
+                        aria-label={`Remover ${scan.arquivo_original}`}
+                      >
+                        {remove.isPending && remove.variables?.id === scan.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setActiveScan(scan)}
-                    >
-                      <ScanLine className="mr-2 h-4 w-4" />
-                      {scan.status === "revisao"
-                        ? "Revisar leitura"
-                        : scan.status === "processada"
-                          ? "Ver leitura"
-                          : "Ler marcações"}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      disabled={remove.isPending}
-                      onClick={() => {
-                        if (window.confirm("Remover esta folha preparada?")) remove.mutate(scan);
-                      }}
-                      aria-label={`Remover ${scan.arquivo_original}`}
-                    >
-                      {remove.isPending && remove.variables?.id === scan.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <p className="mt-2 text-sm text-muted-foreground">

@@ -371,7 +371,7 @@ export async function saveAnswerSheetScanReading({
   confianca,
 }: {
   scanId: string;
-  alunoId: string;
+  alunoId: string | null;
   modeloId: string;
   pagina: number;
   resultado: Json;
