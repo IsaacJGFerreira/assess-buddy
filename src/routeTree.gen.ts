@@ -17,6 +17,7 @@ import { Route as AuthenticatedPainelRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedAvaliacoesNovaRouteImport } from './routes/_authenticated/avaliacoes.nova'
 import { Route as AuthenticatedAvaliacoesIdRouteImport } from './routes/_authenticated/avaliacoes.$id'
 import { Route as AuthenticatedAvaliacoesIdFolhaRouteImport } from './routes/_authenticated/avaliacoes.$id.folha'
+import { Route as AuthenticatedAvaliacoesIdDevolutivaAlunoIdRouteImport } from './routes/_authenticated/avaliacoes.$id.devolutiva.$alunoId'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -60,6 +61,12 @@ const AuthenticatedAvaliacoesIdFolhaRoute =
     path: '/folha',
     getParentRoute: () => AuthenticatedAvaliacoesIdRoute,
   } as any)
+const AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute =
+  AuthenticatedAvaliacoesIdDevolutivaAlunoIdRouteImport.update({
+    id: '/devolutiva/$alunoId',
+    path: '/devolutiva/$alunoId',
+    getParentRoute: () => AuthenticatedAvaliacoesIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -69,6 +76,7 @@ export interface FileRoutesByFullPath {
   '/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRouteWithChildren
   '/avaliacoes/nova': typeof AuthenticatedAvaliacoesNovaRoute
   '/avaliacoes/$id/folha': typeof AuthenticatedAvaliacoesIdFolhaRoute
+  '/avaliacoes/$id/devolutiva/$alunoId': typeof AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -78,6 +86,7 @@ export interface FileRoutesByTo {
   '/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRouteWithChildren
   '/avaliacoes/nova': typeof AuthenticatedAvaliacoesNovaRoute
   '/avaliacoes/$id/folha': typeof AuthenticatedAvaliacoesIdFolhaRoute
+  '/avaliacoes/$id/devolutiva/$alunoId': typeof AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -89,6 +98,7 @@ export interface FileRoutesById {
   '/_authenticated/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRouteWithChildren
   '/_authenticated/avaliacoes/nova': typeof AuthenticatedAvaliacoesNovaRoute
   '/_authenticated/avaliacoes/$id/folha': typeof AuthenticatedAvaliacoesIdFolhaRoute
+  '/_authenticated/avaliacoes/$id/devolutiva/$alunoId': typeof AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
     | '/avaliacoes/$id'
     | '/avaliacoes/nova'
     | '/avaliacoes/$id/folha'
+    | '/avaliacoes/$id/devolutiva/$alunoId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -109,6 +120,7 @@ export interface FileRouteTypes {
     | '/avaliacoes/$id'
     | '/avaliacoes/nova'
     | '/avaliacoes/$id/folha'
+    | '/avaliacoes/$id/devolutiva/$alunoId'
   id:
     | '__root__'
     | '/'
@@ -119,6 +131,7 @@ export interface FileRouteTypes {
     | '/_authenticated/avaliacoes/$id'
     | '/_authenticated/avaliacoes/nova'
     | '/_authenticated/avaliacoes/$id/folha'
+    | '/_authenticated/avaliacoes/$id/devolutiva/$alunoId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -185,16 +198,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAvaliacoesIdFolhaRouteImport
       parentRoute: typeof AuthenticatedAvaliacoesIdRoute
     }
+    '/_authenticated/avaliacoes/$id/devolutiva/$alunoId': {
+      id: '/_authenticated/avaliacoes/$id/devolutiva/$alunoId'
+      path: '/devolutiva/$alunoId'
+      fullPath: '/avaliacoes/$id/devolutiva/$alunoId'
+      preLoaderRoute: typeof AuthenticatedAvaliacoesIdDevolutivaAlunoIdRouteImport
+      parentRoute: typeof AuthenticatedAvaliacoesIdRoute
+    }
   }
 }
 
 interface AuthenticatedAvaliacoesIdRouteChildren {
   AuthenticatedAvaliacoesIdFolhaRoute: typeof AuthenticatedAvaliacoesIdFolhaRoute
+  AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute: typeof AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute
 }
 
 const AuthenticatedAvaliacoesIdRouteChildren: AuthenticatedAvaliacoesIdRouteChildren =
   {
     AuthenticatedAvaliacoesIdFolhaRoute: AuthenticatedAvaliacoesIdFolhaRoute,
+    AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute:
+      AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute,
   }
 
 const AuthenticatedAvaliacoesIdRouteWithChildren =
