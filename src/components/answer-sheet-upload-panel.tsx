@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Cropper, { type Area, type MediaSize, type Point } from "react-easy-crop";
+import Cropper, { type Area, type MediaSize, type Point, type Size } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
 import {
   CheckCircle2,
@@ -76,6 +76,7 @@ export function AnswerSheetUploadPanel({
   const [dragging, setDragging] = useState(false);
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
   const [cropPixels, setCropPixels] = useState<Area | null>(null);
+  const [cropSize, setCropSize] = useState<Size | null>(null);
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [cropFormat, setCropFormat] = useState<CropFormat>("original");
@@ -110,6 +111,7 @@ export function AnswerSheetUploadPanel({
     setLoadingSource(false);
     setCrop({ x: 0, y: 0 });
     setCropPixels(null);
+    setCropSize(null);
     setZoom(1);
     setRotation(0);
     setCropFormat("original");
@@ -121,6 +123,7 @@ export function AnswerSheetUploadPanel({
   const resetPosition = useCallback(() => {
     setCrop({ x: 0, y: 0 });
     setCropPixels(null);
+    setCropSize(null);
     setZoom(1);
     setRotation(0);
   }, []);
@@ -376,6 +379,7 @@ export function AnswerSheetUploadPanel({
                 aspect={cropAspect}
                 onCropChange={setCrop}
                 onCropComplete={(_area, pixels) => setCropPixels(pixels)}
+                onCropSizeChange={setCropSize}
                 onZoomChange={setZoom}
                 onMediaLoaded={(media: MediaSize) => {
                   const aspect = media.naturalWidth / media.naturalHeight;
@@ -391,6 +395,7 @@ export function AnswerSheetUploadPanel({
                 restrictPosition
               />
             )}
+            {source && !loadingSource && cropSize && <AlignmentMarkerGuides cropSize={cropSize} />}
             {loadingSource && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white">
                 <Loader2 className="h-7 w-7 animate-spin" />
@@ -399,7 +404,7 @@ export function AnswerSheetUploadPanel({
             )}
             {source && !loadingSource && (
               <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full border border-cyan-200/70 bg-slate-950/85 px-3 py-1.5 text-center text-xs font-medium text-white shadow">
-                Mantenha os quatro quadrados pretos dentro do quadro azul
+                Encaixe cada quadrado preto dentro da janela azul correspondente
               </div>
             )}
           </div>
@@ -595,6 +600,33 @@ export function AnswerSheetUploadPanel({
         </div>
       )}
     </section>
+  );
+}
+
+function AlignmentMarkerGuides({ cropSize }: { cropSize: Size }) {
+  const guideSize = Math.max(34, Math.min(68, Math.min(cropSize.width, cropSize.height) * 0.105));
+  const inset = Math.max(5, guideSize * 0.1);
+  const positions = [
+    { key: "top-left", top: inset, left: inset },
+    { key: "top-right", top: inset, right: inset },
+    { key: "bottom-left", bottom: inset, left: inset },
+    { key: "bottom-right", bottom: inset, right: inset },
+  ];
+
+  return (
+    <div
+      className="pointer-events-none absolute left-1/2 top-1/2 z-[5] -translate-x-1/2 -translate-y-1/2"
+      style={{ width: cropSize.width, height: cropSize.height }}
+      aria-hidden="true"
+    >
+      {positions.map(({ key, ...position }) => (
+        <span
+          key={key}
+          className="absolute rounded-sm border-2 border-cyan-300 bg-cyan-300/10 shadow-[0_0_0_1px_rgba(8,47,73,0.9),0_0_14px_rgba(34,211,238,0.45)]"
+          style={{ width: guideSize, height: guideSize, ...position }}
+        />
+      ))}
+    </div>
   );
 }
 
