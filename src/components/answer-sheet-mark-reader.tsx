@@ -497,8 +497,21 @@ export function AnswerSheetMarkReader({
 
           {overlay && (
             <div className="rounded-lg border border-border bg-slate-950 p-3">
-              <div className="mb-2 flex items-center gap-2 text-xs text-slate-200">
-                <Eye className="h-4 w-4" /> Conferência visual dos pontos analisados
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-200">
+                <span className="flex items-center gap-2">
+                  <Eye className="h-4 w-4" /> Conferência visual dos pontos analisados
+                </span>
+                <span className="flex flex-wrap items-center gap-3 text-[11px]">
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full border-2 border-white bg-blue-500" />
+                    Resposta lida
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full border-2 border-white bg-amber-500" />
+                    Precisa revisar
+                  </span>
+                  <span>Sem ponto = em branco</span>
+                </span>
               </div>
               <img
                 src={overlay}
@@ -980,24 +993,20 @@ function createAnalysisOverlay(image: ImageBitmap, analysis: AnswerSheetOmrAnaly
   }
   for (const reading of analysis.readings) {
     for (const sample of reading.samples) {
-      const selected =
-        (reading.kind === "numeric"
-          ? sample.digitIndex !== null && reading.value?.[sample.digitIndex] === sample.value
-          : reading.value === sample.value) && sample.score >= analysis.threshold;
+      const radius = Math.max(3, sample.imageRadius * scale);
       context.beginPath();
-      context.arc(
-        sample.imageX * scale,
-        sample.imageY * scale,
-        Math.max(3, sample.imageRadius * scale),
-        0,
-        Math.PI * 2,
-      );
-      context.strokeStyle = reading.requiresReview
-        ? "#f59e0b"
-        : selected
-          ? "#16a34a"
-          : "rgba(59, 130, 246, 0.45)";
+      context.arc(sample.imageX * scale, sample.imageY * scale, radius, 0, Math.PI * 2);
+      context.strokeStyle = reading.requiresReview ? "#f59e0b" : "rgba(37, 99, 235, 0.72)";
       context.stroke();
+      if (isReadSample(reading, sample, analysis.threshold)) {
+        drawReadPoint(
+          context,
+          sample.imageX * scale,
+          sample.imageY * scale,
+          radius,
+          reading.requiresReview ? "#f59e0b" : "#2563eb",
+        );
+      }
     }
   }
   return canvas.toDataURL("image/jpeg", 0.84);
@@ -1053,20 +1062,51 @@ function createQuestionEvidenceImages(
     );
     context.lineWidth = Math.max(2, maximumRadius * scale * 0.18);
     for (const sample of samples) {
+      const x = (sample.imageX - left) * scale;
+      const y = (sample.imageY - top) * scale;
+      const radius = Math.max(5, sample.imageRadius * scale * 1.15);
       context.beginPath();
-      context.arc(
-        (sample.imageX - left) * scale,
-        (sample.imageY - top) * scale,
-        Math.max(5, sample.imageRadius * scale * 1.15),
-        0,
-        Math.PI * 2,
-      );
+      context.arc(x, y, radius, 0, Math.PI * 2);
       context.strokeStyle = sample.score >= threshold ? "#f59e0b" : "rgba(37, 99, 235, 0.72)";
       context.stroke();
+      if (isReadSample(reading, sample, threshold)) {
+        drawReadPoint(context, x, y, radius, "#f59e0b");
+      }
     }
     evidence[reading.questionId] = canvas.toDataURL("image/jpeg", 0.88);
   }
   return evidence;
+}
+
+function isReadSample(
+  reading: OmrQuestionReading,
+  sample: OmrQuestionReading["samples"][number],
+  threshold: number,
+): boolean {
+  if (reading.value !== null) {
+    return reading.kind === "numeric"
+      ? sample.digitIndex !== null && reading.value[sample.digitIndex] === sample.value
+      : reading.value === sample.value;
+  }
+  return reading.requiresReview && sample.score >= threshold;
+}
+
+function drawReadPoint(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  bubbleRadius: number,
+  color: string,
+) {
+  const pointRadius = Math.max(2.5, Math.min(5.5, bubbleRadius * 0.3));
+  context.beginPath();
+  context.arc(x, y, pointRadius + 1.5, 0, Math.PI * 2);
+  context.fillStyle = "rgba(255, 255, 255, 0.94)";
+  context.fill();
+  context.beginPath();
+  context.arc(x, y, pointRadius, 0, Math.PI * 2);
+  context.fillStyle = color;
+  context.fill();
 }
 
 function buildReadingPayload(
