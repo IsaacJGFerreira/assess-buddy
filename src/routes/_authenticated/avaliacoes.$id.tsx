@@ -15,7 +15,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Copy, Printer, FileText, ExternalLink } from "lucide-react";
+import { Plus, Trash2, Copy, Printer, FileText, LayoutGrid, ExternalLink } from "lucide-react";
+import {
+  DEFAULT_ANSWER_SHEET_LAYOUT,
+  type AnswerSheetOrientation,
+} from "@/lib/answer-sheet-layout";
 
 export const Route = createFileRoute("/_authenticated/avaliacoes/$id")({
   component: AvaliacaoDetail,
@@ -151,7 +155,7 @@ function ConfigTab({ avaliacaoId }: { avaliacaoId: string }) {
                     <Select value={String(q.qtd_alternativas ?? 5)} onValueChange={(v) => update.mutate({ id: q.id, patch: { qtd_alternativas: Number(v) } })}>
                       <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {[3,4,5,6].map(n => <SelectItem key={n} value={String(n)}>{n} alt.</SelectItem>)}
+                        {[2,3,4,5,6,7].map(n => <SelectItem key={n} value={String(n)}>{n} alt.</SelectItem>)}
                       </SelectContent>
                     </Select>
                   )}
@@ -271,25 +275,88 @@ function GabaritoTab({ avaliacaoId }: { avaliacaoId: string }) {
 
 // ================= FOLHA =================
 function FolhaTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: string | null }) {
+  const [orientation, setOrientation] = useState<AnswerSheetOrientation>(DEFAULT_ANSWER_SHEET_LAYOUT.orientation);
+  const [columns, setColumns] = useState(DEFAULT_ANSWER_SHEET_LAYOUT.columns);
+  const [rowsPerColumn, setRowsPerColumn] = useState(DEFAULT_ANSWER_SHEET_LAYOUT.rowsPerColumn);
   const alunos = useQuery({
     queryKey: ["alunos", turmaId ?? ""],
     queryFn: () => turmaId ? listAlunosByTurma(turmaId) : Promise.resolve([]),
     enabled: !!turmaId,
   });
+  const maxColumns = orientation === "portrait" ? 4 : 6;
+  const sheetSearch = {
+    colunas: Math.min(columns, maxColumns),
+    linhas: rowsPerColumn,
+    orientacao: orientation,
+  };
+
+  function changeOrientation(value: AnswerSheetOrientation) {
+    setOrientation(value);
+    if (value === "portrait" && columns > 4) setColumns(4);
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-border bg-card p-4">
-        <h3 className="font-semibold mb-2">Impressão da folha de respostas</h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          Abra a folha em uma nova aba e use "Imprimir" do navegador (ou salvar em PDF).
-          Formato A4, alto contraste, pronto para xerox.
+        <div className="flex items-center gap-2 mb-2">
+          <LayoutGrid className="h-4 w-4" />
+          <h3 className="font-semibold">Configuração da folha de respostas</h3>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Organize a grade antes de visualizar. A prévia permite imprimir e baixar a folha em PDF ou PNG.
         </p>
-        <div className="flex flex-wrap gap-2">
-          <Button asChild variant="outline">
-            <a href={`/avaliacoes/${avaliacaoId}/folha`} target="_blank" rel="noreferrer">
-              <FileText className="h-4 w-4 mr-2" />Folha genérica <ExternalLink className="h-3 w-3 ml-2" />
-            </a>
+
+        <div className="grid gap-4 mt-5 md:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label>Orientação</Label>
+            <Select value={orientation} onValueChange={(value) => changeOrientation(value as AnswerSheetOrientation)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="landscape">A4 paisagem</SelectItem>
+                <SelectItem value="portrait">A4 retrato</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Colunas</Label>
+            <Select value={String(columns)} onValueChange={(value) => setColumns(Number(value))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Array.from({ length: maxColumns }, (_, index) => index + 1).map((value) => (
+                  <SelectItem key={value} value={String(value)}>{value} coluna{value > 1 ? "s" : ""}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="sheet-rows">Linhas por coluna</Label>
+            <Input
+              id="sheet-rows"
+              type="number"
+              min={5}
+              max={orientation === "landscape" ? 25 : 35}
+              value={rowsPerColumn}
+              onChange={(event) => {
+                const maximum = orientation === "landscape" ? 25 : 35;
+                setRowsPerColumn(Math.min(maximum, Math.max(5, Number(event.target.value) || 5)));
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          <Button asChild>
+            <Link
+              to="/avaliacoes/$id/folha"
+              params={{ id: avaliacaoId }}
+              search={sheetSearch}
+            >
+              <FileText className="h-4 w-4 mr-2" />Visualizar folha genérica
+            </Link>
           </Button>
+          <span className="text-xs text-muted-foreground">
+            Capacidade de {sheetSearch.colunas * rowsPerColumn} questões por página.
+          </span>
         </div>
       </div>
       {turmaId && (alunos.data?.length ?? 0) > 0 && (
@@ -297,11 +364,15 @@ function FolhaTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: stri
           <h3 className="font-semibold mb-3">Folhas personalizadas por aluno</h3>
           <div className="grid gap-2 md:grid-cols-2">
             {alunos.data!.map(a => (
-              <a key={a.id} href={`/avaliacoes/${avaliacaoId}/folha?aluno=${a.id}`} target="_blank" rel="noreferrer"
+              <Link
+                key={a.id}
+                to="/avaliacoes/$id/folha"
+                params={{ id: avaliacaoId }}
+                search={{ ...sheetSearch, aluno: a.id }}
                 className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm hover:bg-muted/50">
                 <span>{a.chamada ? `${a.chamada}. ` : ""}{a.nome}</span>
                 <Printer className="h-4 w-4 text-muted-foreground" />
-              </a>
+              </Link>
             ))}
           </div>
         </div>

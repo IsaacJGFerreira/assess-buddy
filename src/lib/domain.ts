@@ -113,9 +113,7 @@ export async function listQuestoes(avaliacaoId: string): Promise<Questao[]> {
   return data as Questao[];
 }
 
-export async function listRespostasByAvaliacao(
-  avaliacaoId: string,
-): Promise<Resposta[]> {
+export async function listRespostasByAvaliacao(avaliacaoId: string): Promise<Resposta[]> {
   const { data, error } = await supabase
     .from("respostas_alunos")
     .select("*")
@@ -167,7 +165,7 @@ export function calcularNotaAluno(
 export function alternativas(q: Questao): string[] {
   if (q.tipo === "mc") {
     const n = q.qtd_alternativas ?? 5;
-    return ["A", "B", "C", "D", "E", "F"].slice(0, n);
+    return ["A", "B", "C", "D", "E", "F", "G"].slice(0, n);
   }
   if (q.tipo === "ce") return ["C", "E"];
   return [];
