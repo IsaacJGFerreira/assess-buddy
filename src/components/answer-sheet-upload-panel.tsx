@@ -12,6 +12,7 @@ import {
   Loader2,
   RotateCcw,
   RotateCw,
+  ScanLine,
   Trash2,
   Upload,
   X,
@@ -20,6 +21,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
+import { AnswerSheetMarkReader } from "@/components/answer-sheet-mark-reader";
 import {
   ANSWER_SHEET_SCAN_ACCEPT,
   ANSWER_SHEET_SCAN_MAX_BYTES,
@@ -35,6 +37,8 @@ import {
   isAnswerSheetPersistenceUnavailable,
   listAnswerSheetScans,
   uploadAnswerSheetScan,
+  type Aluno,
+  type Avaliacao,
   type DigitalizacaoFolha,
 } from "@/lib/domain";
 
@@ -49,7 +53,14 @@ const STATUS_LABEL: Record<DigitalizacaoFolha["status"], string> = {
   erro: "Com erro",
 };
 
-export function AnswerSheetUploadPanel({ avaliacaoId }: { avaliacaoId: string }) {
+export function AnswerSheetUploadPanel({
+  avaliacao,
+  alunos,
+}: {
+  avaliacao: Avaliacao;
+  alunos: Aluno[];
+}) {
+  const avaliacaoId = avaliacao.id;
   const queryClient = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const imageObjectUrlRef = useRef<string | null>(null);
@@ -69,6 +80,7 @@ export function AnswerSheetUploadPanel({ avaliacaoId }: { avaliacaoId: string })
   const [rotation, setRotation] = useState(0);
   const [cropFormat, setCropFormat] = useState<CropFormat>("original");
   const [sourceAspect, setSourceAspect] = useState(A4_ASPECT);
+  const [activeScan, setActiveScan] = useState<DigitalizacaoFolha | null>(null);
 
   const scans = useQuery({
     queryKey: ["answer-sheet-scans", avaliacaoId],
@@ -232,6 +244,18 @@ export function AnswerSheetUploadPanel({ avaliacaoId }: { avaliacaoId: string })
         ? 1 / A4_ASPECT
         : sourceCropAspect;
   const migrationPending = Boolean(scans.error && isAnswerSheetPersistenceUnavailable(scans.error));
+
+  if (activeScan) {
+    return (
+      <AnswerSheetMarkReader
+        scan={activeScan}
+        avaliacao={avaliacao}
+        alunos={alunos}
+        onBack={() => setActiveScan(null)}
+        onCompleted={() => setActiveScan(null)}
+      />
+    );
+  }
 
   return (
     <section className="space-y-4 rounded-lg border border-border bg-card p-5">
@@ -513,23 +537,38 @@ export function AnswerSheetUploadPanel({ avaliacaoId }: { avaliacaoId: string })
                       </span>
                     </div>
                   </div>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                    disabled={remove.isPending}
-                    onClick={() => {
-                      if (window.confirm("Remover esta folha preparada?")) remove.mutate(scan);
-                    }}
-                    aria-label={`Remover ${scan.arquivo_original}`}
-                  >
-                    {remove.isPending && remove.variables?.id === scan.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-4 w-4" />
-                    )}
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setActiveScan(scan)}
+                    >
+                      <ScanLine className="mr-2 h-4 w-4" />
+                      {scan.status === "revisao"
+                        ? "Revisar leitura"
+                        : scan.status === "processada"
+                          ? "Ver leitura"
+                          : "Ler marcações"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      disabled={remove.isPending}
+                      onClick={() => {
+                        if (window.confirm("Remover esta folha preparada?")) remove.mutate(scan);
+                      }}
+                      aria-label={`Remover ${scan.arquivo_original}`}
+                    >
+                      {remove.isPending && remove.variables?.id === scan.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>

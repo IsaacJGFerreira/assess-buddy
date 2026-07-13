@@ -116,13 +116,18 @@ export type Database = {
           id: string
           largura_px: number
           mime_original: string
+          modelo_id: string | null
           owner_id: string
           pagina_origem: number
+          pagina_modelo: number | null
+          processado_at: string | null
           recorte: Json
+          resultado_leitura: Json | null
           rotacao: number
           status: string
           storage_path: string
           tamanho_bytes: number
+          confianca_leitura: number | null
           updated_at: string
         }
         Insert: {
@@ -135,13 +140,18 @@ export type Database = {
           id?: string
           largura_px: number
           mime_original: string
+          modelo_id?: string | null
           owner_id: string
           pagina_origem?: number
+          pagina_modelo?: number | null
+          processado_at?: string | null
           recorte: Json
+          resultado_leitura?: Json | null
           rotacao?: number
           status?: string
           storage_path: string
           tamanho_bytes: number
+          confianca_leitura?: number | null
           updated_at?: string
         }
         Update: {
@@ -154,13 +164,18 @@ export type Database = {
           id?: string
           largura_px?: number
           mime_original?: string
+          modelo_id?: string | null
           owner_id?: string
           pagina_origem?: number
+          pagina_modelo?: number | null
+          processado_at?: string | null
           recorte?: Json
+          resultado_leitura?: Json | null
           rotacao?: number
           status?: string
           storage_path?: string
           tamanho_bytes?: number
+          confianca_leitura?: number | null
           updated_at?: string
         }
         Relationships: [
@@ -183,6 +198,13 @@ export type Database = {
             columns: ["folha_id"]
             isOneToOne: false
             referencedRelation: "folhas_respostas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "digitalizacoes_folhas_modelo_id_fkey"
+            columns: ["modelo_id"]
+            isOneToOne: false
+            referencedRelation: "modelos_folha_respostas"
             referencedColumns: ["id"]
           },
         ]
@@ -456,6 +478,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      confirmar_leitura_folha: {
+        Args: {
+          p_aluno_id: string
+          p_digitalizacao_id: string
+          p_modelo_id: string
+          p_pagina: number
+          p_resultado: Json
+        }
+        Returns: undefined
+      }
       criar_ou_obter_folha_respostas: {
         Args: {
           p_aluno_id: string | null

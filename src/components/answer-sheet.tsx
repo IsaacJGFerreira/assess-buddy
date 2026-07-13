@@ -3,6 +3,7 @@ import { QRCodeSVG } from "qrcode.react";
 
 import { alternativas, type Aluno, type Avaliacao, type Questao } from "@/lib/domain";
 import type { AnswerSheetLayout } from "@/lib/answer-sheet-layout";
+import { buildAnswerSheetPages, type AnswerSheetPageDescriptor } from "@/lib/answer-sheet-pages";
 
 interface AnswerSheetProps {
   avaliacao: Avaliacao;
@@ -18,10 +19,6 @@ export interface AnswerSheetIdentification {
   qrPayload: string;
 }
 
-type SheetPage =
-  | { kind: "main"; questions: Questao[]; numericQuestions: Questao[] }
-  | { kind: "numeric"; questions: Questao[]; numericQuestions: Questao[] };
-
 export function AnswerSheet({
   avaliacao,
   questoes,
@@ -29,7 +26,7 @@ export function AnswerSheet({
   layout,
   identification,
 }: AnswerSheetProps) {
-  const pages = buildPages(questoes, layout);
+  const pages = buildAnswerSheetPages(questoes, layout);
 
   return (
     <div className="answer-sheet-document">
@@ -49,28 +46,6 @@ export function AnswerSheet({
   );
 }
 
-function buildPages(questoes: Questao[], layout: AnswerSheetLayout): SheetPage[] {
-  const capacity = Math.max(1, layout.columns * layout.rowsPerColumn);
-  const groups = chunk(questoes, capacity);
-  if (groups.length === 0) groups.push([]);
-
-  return groups.flatMap((questions) => {
-    const numericQuestions = questions.filter((question) => question.tipo === "num");
-    const numericOnMainPage = layout.columns < 6 ? numericQuestions.slice(0, 4) : [];
-    const numericOverflow = layout.columns < 6 ? numericQuestions.slice(4) : numericQuestions;
-    const supplements = chunk(numericOverflow, layout.orientation === "landscape" ? 8 : 6);
-
-    return [
-      { kind: "main", questions, numericQuestions: numericOnMainPage } as SheetPage,
-      ...supplements.map((items) => ({
-        kind: "numeric" as const,
-        questions: [],
-        numericQuestions: items,
-      })),
-    ];
-  });
-}
-
 function AnswerSheetPage({
   avaliacao,
   aluno,
@@ -84,7 +59,7 @@ function AnswerSheetPage({
   aluno?: Aluno | null;
   layout: AnswerSheetLayout;
   identification?: AnswerSheetIdentification | null;
-  page: SheetPage;
+  page: AnswerSheetPageDescriptor;
   pageNumber: number;
   pageCount: number;
 }) {
@@ -131,9 +106,7 @@ function AnswerSheetPage({
           )}
           <div className="answer-sheet-code-text">
             <span>Código da folha</span>
-            <strong>
-              {identification?.code ?? avaliacao.id.slice(0, 8).toUpperCase()}
-            </strong>
+            <strong>{identification?.code ?? avaliacao.id.slice(0, 8).toUpperCase()}</strong>
             <small>
               {identification ? `Versão ${identification.version} · ` : ""}Página {pageNumber}
             </small>
@@ -163,6 +136,7 @@ function AnswerSheetPage({
                       key={question.id}
                       question={question}
                       dense={layout.columns >= 5}
+                      pageNumber={pageNumber}
                     />
                   ))}
                 </div>
@@ -182,7 +156,7 @@ function AnswerSheetPage({
             className={`answer-sheet-numeric-panel ${page.kind === "numeric" ? "numeric-only" : ""}`}
           >
             {page.numericQuestions.map((question) => (
-              <NumericCard key={question.id} question={question} />
+              <NumericCard key={question.id} question={question} pageNumber={pageNumber} />
             ))}
           </aside>
         )}
@@ -218,7 +192,15 @@ function SheetField({ label, value, wide }: { label: string; value?: string; wid
   );
 }
 
-function QuestionRow({ question, dense }: { question: Questao; dense: boolean }) {
+function QuestionRow({
+  question,
+  dense,
+  pageNumber,
+}: {
+  question: Questao;
+  dense: boolean;
+  pageNumber: number;
+}) {
   return (
     <div className={`answer-sheet-question ${dense ? "is-dense" : ""}`}>
       <strong className="answer-sheet-question-number">{question.numero}</strong>
@@ -229,7 +211,15 @@ function QuestionRow({ question, dense }: { question: Questao; dense: boolean })
       ) : (
         <div className="answer-sheet-bubbles">
           {alternativas(question).map((option) => (
-            <Bubble key={option} label={option} dense={dense} />
+            <Bubble
+              key={option}
+              label={option}
+              dense={dense}
+              pageNumber={pageNumber}
+              question={question}
+              value={option}
+              kind="objective"
+            />
           ))}
         </div>
       )}
@@ -237,7 +227,7 @@ function QuestionRow({ question, dense }: { question: Questao; dense: boolean })
   );
 }
 
-function NumericCard({ question }: { question: Questao }) {
+function NumericCard({ question, pageNumber }: { question: Questao; pageNumber: number }) {
   const digits = Math.min(4, Math.max(1, question.num_digitos ?? 3));
   const labels = numericPlaceLabels(digits);
 
@@ -245,11 +235,20 @@ function NumericCard({ question }: { question: Questao }) {
     <div className="answer-sheet-numeric-card">
       <div className="answer-sheet-numeric-title">Item {question.numero}</div>
       <div className="answer-sheet-numeric-grid">
-        {labels.map((label) => (
+        {labels.map((label, digitIndex) => (
           <div className="answer-sheet-numeric-column" key={label}>
             <strong>{label}</strong>
             {Array.from({ length: 10 }, (_, digit) => (
-              <Bubble key={digit} label={String(digit)} dense />
+              <Bubble
+                key={digit}
+                label={String(digit)}
+                dense
+                pageNumber={pageNumber}
+                question={question}
+                value={String(digit)}
+                kind="numeric"
+                digitIndex={digitIndex}
+              />
             ))}
           </div>
         ))}
@@ -258,8 +257,37 @@ function NumericCard({ question }: { question: Questao }) {
   );
 }
 
-function Bubble({ label, dense = false }: { label: string; dense?: boolean }) {
-  return <span className={`answer-sheet-bubble ${dense ? "is-dense" : ""}`}>{label}</span>;
+function Bubble({
+  label,
+  dense = false,
+  pageNumber,
+  question,
+  value,
+  kind,
+  digitIndex,
+}: {
+  label: string;
+  dense?: boolean;
+  pageNumber: number;
+  question: Questao;
+  value: string;
+  kind: "objective" | "numeric";
+  digitIndex?: number;
+}) {
+  return (
+    <span
+      className={`answer-sheet-bubble ${dense ? "is-dense" : ""}`}
+      data-omr-bubble="true"
+      data-omr-page={pageNumber}
+      data-omr-question-id={question.id}
+      data-omr-question-number={question.numero}
+      data-omr-kind={kind}
+      data-omr-value={value}
+      data-omr-digit-index={digitIndex}
+    >
+      {label}
+    </span>
+  );
 }
 
 function numericPlaceLabels(digits: number): string[] {
@@ -267,12 +295,4 @@ function numericPlaceLabels(digits: number): string[] {
   if (digits === 2) return ["D", "U"];
   if (digits === 3) return ["C", "D", "U"];
   return ["M", "C", "D", "U"];
-}
-
-function chunk<T>(items: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let index = 0; index < items.length; index += size) {
-    chunks.push(items.slice(index, index + size));
-  }
-  return chunks;
 }
