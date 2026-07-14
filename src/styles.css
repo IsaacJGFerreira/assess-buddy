@@ -432,6 +432,7 @@
   min-height: 5.3mm;
   align-items: center;
   gap: 1.2mm;
+  border-bottom: 0.25mm solid #aaa;
   font-size: 8pt;
   white-space: nowrap;
 }
