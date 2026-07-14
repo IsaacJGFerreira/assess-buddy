@@ -207,8 +207,9 @@
 
 /* Configurable answer sheet */
 .answer-sheet-export-root {
+  display: inline-flex;
   width: max-content;
-  min-width: 100%;
+  min-width: 0;
   padding: 24px;
   background: oklch(0.95 0.01 90);
 }
@@ -219,17 +220,18 @@
   align-items: center;
   gap: 24px;
   width: max-content;
-  min-width: 100%;
+  min-width: 0;
 }
 
 .answer-sheet-page {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  width: var(--sheet-width);
-  height: var(--sheet-height);
+  display: inline-flex;
+  width: max-content;
+  min-width: 42mm;
+  height: max-content;
+  min-height: 32mm;
   overflow: hidden;
-  padding: 10mm 9mm 8mm;
+  padding: 7mm;
   color: #111;
   background: #fff;
   box-shadow: 0 10px 30px rgb(0 0 0 / 14%);
@@ -238,26 +240,26 @@
 
 .answer-sheet-marker {
   position: absolute;
-  width: 4mm;
-  height: 4mm;
+  width: 3mm;
+  height: 3mm;
   background: #111;
 }
 
 .marker-top-left {
-  top: 4mm;
-  left: 4mm;
+  top: 1.8mm;
+  left: 1.8mm;
 }
 .marker-top-right {
-  top: 4mm;
-  right: 4mm;
+  top: 1.8mm;
+  right: 1.8mm;
 }
 .marker-bottom-left {
-  bottom: 4mm;
-  left: 4mm;
+  bottom: 1.8mm;
+  left: 1.8mm;
 }
 .marker-bottom-right {
-  right: 4mm;
-  bottom: 4mm;
+  right: 1.8mm;
+  bottom: 1.8mm;
 }
 
 .answer-sheet-alignment-crop {
@@ -380,16 +382,18 @@
 
 .answer-sheet-body {
   display: flex;
-  min-height: 0;
-  flex: 1;
+  width: max-content;
+  min-width: 0;
+  flex: none;
   gap: 4mm;
-  padding: 1mm 2mm 0;
+  padding: 0;
 }
 
 .answer-sheet-objective-panel {
   display: flex;
+  width: max-content;
   min-width: 0;
-  flex: 1;
+  flex: none;
   flex-direction: column;
 }
 
@@ -407,24 +411,27 @@
 
 .answer-sheet-columns {
   display: grid;
-  min-height: 0;
-  flex: 1;
-  gap: 3mm;
+  width: max-content;
+  min-width: 0;
+  flex: none;
+  gap: 4mm;
 }
 
 .answer-sheet-column {
   display: flex;
-  min-width: 0;
+  width: max-content;
+  min-width: 24mm;
   flex-direction: column;
   justify-content: flex-start;
 }
 
 .answer-sheet-question {
   display: flex;
-  min-height: 6.1mm;
+  width: max-content;
+  min-width: 100%;
+  min-height: 5.3mm;
   align-items: center;
   gap: 1.2mm;
-  border-bottom: 0.25mm solid #aaa;
   font-size: 8pt;
   white-space: nowrap;
 }
@@ -483,9 +490,9 @@
 
 .answer-sheet-numeric-panel {
   display: grid;
-  width: 70mm;
+  width: max-content;
   flex: none;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, max-content);
   align-content: start;
   gap: 3mm;
   padding-left: 4mm;
@@ -493,9 +500,9 @@
 }
 
 .answer-sheet-numeric-panel.numeric-only {
-  width: auto;
-  flex: 1;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: max-content;
+  flex: none;
+  grid-template-columns: repeat(4, max-content);
   padding-left: 0;
   border-left: 0;
 }
