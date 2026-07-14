@@ -880,6 +880,28 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
                 </div>
               )}
 
+              {identificationMode === "blank" && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="sheet-blank-digits">Quantidade de algarismos da matrícula</Label>
+                  <Input
+                    id="sheet-blank-digits"
+                    type="number"
+                    min={MIN_IDENTIFIER_DIGITS}
+                    max={MAX_IDENTIFIER_DIGITS}
+                    value={identifierDigits}
+                    onChange={(event) => {
+                      const raw = Number(event.target.value);
+                      if (!Number.isFinite(raw)) return;
+                      setBlankDigitsOverride(clampIdentifierDigits(raw));
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Ajuste conforme o padrão de matrícula da sua escola (entre{" "}
+                    {MIN_IDENTIFIER_DIGITS} e {MAX_IDENTIFIER_DIGITS} dígitos).
+                  </p>
+                </div>
+              )}
+
               {identificationMode === "prefilled" && (
                 <div className="space-y-1.5">
                   <Label>Aluno da folha</Label>
