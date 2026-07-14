@@ -63,10 +63,15 @@ import {
   type AnswerSheetOrientation,
 } from "@/lib/answer-sheet-layout";
 import {
+  clampIdentifierDigits,
   determineIdentifierDigits,
+  DEFAULT_IDENTIFIER_DIGITS,
+  MAX_IDENTIFIER_DIGITS,
+  MIN_IDENTIFIER_DIGITS,
   isStudentEligibleForPrefilledSheet,
   type AnswerSheetIdentificationMode,
 } from "@/lib/answer-sheet-identification";
+import { batchExportAnswerSheetsAsZip } from "@/lib/answer-sheet-batch";
 
 export const Route = createFileRoute("/_authenticated/avaliacoes/$id")({
   component: AvaliacaoDetail,
@@ -663,11 +668,13 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
   const [identificationMode, setIdentificationMode] =
     useState<AnswerSheetIdentificationMode>("none");
   const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [blankDigitsOverride, setBlankDigitsOverride] = useState<number | null>(null);
   const [preview, setPreview] = useState<{
     identification: IdentificacaoFolhaResposta | null;
     identificationMode: AnswerSheetIdentificationMode;
     identifierDigits: number;
     aluno: Aluno | null;
+    eligibleStudents: Aluno[];
     persistenceUnavailable?: boolean;
   } | null>(null);
   const savedModel = useQuery({
@@ -680,7 +687,11 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
       avaliacao.turma_id ? listAlunosByTurma(avaliacao.turma_id) : Promise.resolve([]),
     enabled: Boolean(avaliacao.turma_id),
   });
-  const identifierDigits = determineIdentifierDigits(students.data ?? []);
+  const derivedIdentifierDigits = determineIdentifierDigits(students.data ?? []);
+  const identifierDigits =
+    identificationMode === "blank"
+      ? clampIdentifierDigits(blankDigitsOverride ?? derivedIdentifierDigits ?? DEFAULT_IDENTIFIER_DIGITS)
+      : derivedIdentifierDigits;
   const eligibleStudents = (students.data ?? []).filter((student) =>
     isStudentEligibleForPrefilledSheet(student, identifierDigits),
   );
@@ -727,6 +738,7 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
         identificationMode,
         identifierDigits,
         aluno: identificationMode === "prefilled" ? selectedStudent : null,
+        eligibleStudents,
       });
       toast.success(`Folha ${identification.codigo} · versão ${identification.versao}.`);
     },
@@ -737,6 +749,7 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
           identificationMode,
           identifierDigits,
           aluno: identificationMode === "prefilled" ? selectedStudent : null,
+          eligibleStudents,
           persistenceUnavailable: true,
         });
         toast.warning("Prévia aberta. O banco ainda precisa receber a atualização das folhas.");
@@ -770,6 +783,7 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
         identificationMode={preview.identificationMode}
         identifierDigits={preview.identifierDigits}
         aluno={preview.aluno}
+        eligibleStudents={preview.eligibleStudents}
         persistenceUnavailable={preview.persistenceUnavailable}
         onBack={() => setPreview(null)}
       />
@@ -863,6 +877,28 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
                 <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                   Campo de matrícula com {identifierDigits} dígitos, calculado pelas matrículas da
                   turma.
+                </div>
+              )}
+
+              {identificationMode === "blank" && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="sheet-blank-digits">Quantidade de algarismos da matrícula</Label>
+                  <Input
+                    id="sheet-blank-digits"
+                    type="number"
+                    min={MIN_IDENTIFIER_DIGITS}
+                    max={MAX_IDENTIFIER_DIGITS}
+                    value={identifierDigits}
+                    onChange={(event) => {
+                      const raw = Number(event.target.value);
+                      if (!Number.isFinite(raw)) return;
+                      setBlankDigitsOverride(clampIdentifierDigits(raw));
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Ajuste conforme o padrão de matrícula da sua escola (entre{" "}
+                    {MIN_IDENTIFIER_DIGITS} e {MAX_IDENTIFIER_DIGITS} dígitos).
+                  </p>
                 </div>
               )}
 
@@ -1006,6 +1042,7 @@ function EmbeddedAnswerSheetPreview({
   identification,
   identificationMode,
   identifierDigits,
+  eligibleStudents,
   persistenceUnavailable = false,
   onBack,
 }: {
@@ -1016,13 +1053,20 @@ function EmbeddedAnswerSheetPreview({
   identification: IdentificacaoFolhaResposta | null;
   identificationMode: AnswerSheetIdentificationMode;
   identifierDigits: number;
+  eligibleStudents: Aluno[];
   persistenceUnavailable?: boolean;
   onBack: () => void;
 }) {
   const exportRootRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState<"pdf" | "png" | null>(null);
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null);
+  const isBatchable = identificationMode === "prefilled" && eligibleStudents.length > 0;
 
   async function exportFile(format: "pdf" | "png") {
+    if (isBatchable) {
+      await exportBatch(format);
+      return;
+    }
     if (!exportRootRef.current || !identification) {
       toast.warning("Aplique a atualização do banco antes de exportar esta folha.");
       return;
@@ -1048,6 +1092,57 @@ function EmbeddedAnswerSheetPreview({
       toast.error("Não foi possível gerar o arquivo. Tente novamente.");
     } finally {
       setExporting(null);
+    }
+  }
+
+  async function exportBatch(format: "pdf" | "png") {
+    setExporting(format);
+    setBatchProgress({ done: 0, total: eligibleStudents.length });
+    try {
+      const items = [] as { fileName: string; element: React.ReactElement }[];
+      for (const student of eligibleStudents) {
+        const info = await createOrGetAnswerSheet({
+          avaliacao,
+          questoes,
+          alunoId: student.id,
+          layout,
+          identificationMode,
+          identifierDigits,
+        });
+        items.push({
+          fileName: `${avaliacao.titulo}-${student.nome}-${info.codigo}`,
+          element: (
+            <AnswerSheet
+              avaliacao={avaliacao}
+              questoes={questoes}
+              aluno={student}
+              layout={layout}
+              identificationMode={identificationMode}
+              identifierDigits={identifierDigits}
+              identification={{
+                code: info.codigo,
+                version: info.versao,
+                qrPayload: info.qrPayload,
+              }}
+            />
+          ),
+        });
+      }
+      await batchExportAnswerSheetsAsZip({
+        format,
+        items,
+        zipBaseName: `${avaliacao.titulo}-${format}`,
+        onProgress: (done, total) => setBatchProgress({ done, total }),
+      });
+      toast.success(
+        `Pacote com ${items.length} folha${items.length > 1 ? "s" : ""} gerado com sucesso.`,
+      );
+    } catch (error) {
+      console.error(error);
+      toast.error("Não foi possível gerar o pacote. Tente novamente.");
+    } finally {
+      setExporting(null);
+      setBatchProgress(null);
     }
   }
 
@@ -1097,27 +1192,27 @@ function EmbeddedAnswerSheetPreview({
             type="button"
             variant="outline"
             onClick={() => void exportFile("png")}
-            disabled={exporting !== null || questoes.length === 0 || !identification}
+            disabled={exporting !== null || questoes.length === 0 || (!isBatchable && !identification)}
           >
             {exporting === "png" ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <FileImage className="mr-2 h-4 w-4" />
             )}
-            Baixar PNG
+            {isBatchable ? `Baixar PNGs da turma (.zip)` : "Baixar PNG"}
           </Button>
           <Button
             type="button"
             variant="outline"
             onClick={() => void exportFile("pdf")}
-            disabled={exporting !== null || questoes.length === 0 || !identification}
+            disabled={exporting !== null || questoes.length === 0 || (!isBatchable && !identification)}
           >
             {exporting === "pdf" ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <Download className="mr-2 h-4 w-4" />
             )}
-            Baixar PDF
+            {isBatchable ? `Baixar PDFs da turma (.zip)` : "Baixar PDF"}
           </Button>
           <Button
             type="button"
@@ -1129,6 +1224,12 @@ function EmbeddedAnswerSheetPreview({
           </Button>
         </div>
       </div>
+
+      {batchProgress && (
+        <div className="no-print border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
+          Gerando pacote… {batchProgress.done}/{batchProgress.total} alunos
+        </div>
+      )}
 
       {persistenceUnavailable && (
         <div className="no-print flex gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">

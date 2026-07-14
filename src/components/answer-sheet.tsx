@@ -35,6 +35,7 @@ export function AnswerSheet({
   const digits = clampIdentifierDigits(identifierDigits);
   const matricula =
     identificationMode === "prefilled" ? formatMatriculaForSheet(aluno?.matricula, digits) : null;
+  const studentName = identificationMode === "prefilled" ? (aluno?.nome ?? null) : null;
 
   return (
     <div className="answer-sheet-document">
@@ -48,6 +49,7 @@ export function AnswerSheet({
           identificationMode={identificationMode}
           identifierDigits={digits}
           matricula={matricula}
+          studentName={studentName}
         />
       ))}
     </div>
@@ -61,6 +63,7 @@ function AnswerSheetPage({
   identificationMode,
   identifierDigits,
   matricula,
+  studentName,
 }: {
   layout: AnswerSheetLayout;
   page: AnswerSheetPageDescriptor;
@@ -69,6 +72,7 @@ function AnswerSheetPage({
   identificationMode: AnswerSheetIdentificationMode;
   identifierDigits: number;
   matricula: string | null;
+  studentName: string | null;
 }) {
   const isLandscape = layout.orientation === "landscape";
   const hasNumericPanel = page.numericQuestions.length > 0;
@@ -91,7 +95,12 @@ function AnswerSheetPage({
 
       <div className={`answer-sheet-body ${hasNumericPanel ? "has-numeric-panel" : ""}`}>
         {identificationMode !== "none" && (
-          <IdentifierCard digits={identifierDigits} matricula={matricula} pageNumber={pageNumber} />
+          <IdentifierCard
+            digits={identifierDigits}
+            matricula={matricula}
+            pageNumber={pageNumber}
+            studentName={studentName}
+          />
         )}
 
         {page.kind === "main" && columnQuestions.length > 0 ? (
@@ -214,18 +223,34 @@ function IdentifierCard({
   digits,
   matricula,
   pageNumber,
+  studentName,
 }: {
   digits: number;
   matricula: string | null;
   pageNumber: number;
+  studentName: string | null;
 }) {
   return (
     <aside className="answer-sheet-identifier-card" aria-label="Matrícula">
+      {studentName && (
+        <div className="answer-sheet-identifier-name" title={studentName}>
+          {studentName}
+        </div>
+      )}
       <div className="answer-sheet-identifier-title">Matrícula</div>
       <div className="answer-sheet-identifier-grid">
         {Array.from({ length: digits }, (_, digitIndex) => (
           <div className="answer-sheet-numeric-column" key={digitIndex}>
-            <strong>{digitIndex + 1}</strong>
+            <span
+              className="answer-sheet-identifier-digit-box"
+              aria-label={
+                matricula
+                  ? `Dígito ${digitIndex + 1} da matrícula`
+                  : `Escreva o dígito ${digitIndex + 1} da matrícula`
+              }
+            >
+              {matricula?.[digitIndex] ?? ""}
+            </span>
             {Array.from({ length: 10 }, (_, digit) => (
               <Bubble
                 key={digit}
