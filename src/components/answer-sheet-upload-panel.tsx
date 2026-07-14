@@ -390,7 +390,7 @@ export function AnswerSheetUploadPanel({
                 onMediaLoaded={(media: MediaSize) => {
                   const aspect = media.naturalWidth / media.naturalHeight;
                   setSourceAspect(aspect);
-                  setCropFormat(aspect >= 1 ? "a4-landscape" : "a4-portrait");
+                  setCropFormat("original");
                 }}
                 objectFit="contain"
                 showGrid={false}
@@ -436,7 +436,7 @@ export function AnswerSheetUploadPanel({
                   active={cropFormat === "original"}
                   onClick={() => setCropFormat("original")}
                 >
-                  Original
+                  Original / compacto
                 </CropFormatButton>
                 <CropFormatButton
                   active={cropFormat === "a4-portrait"}
@@ -498,9 +498,9 @@ export function AnswerSheetUploadPanel({
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            O quadro A4 é escolhido automaticamente. Arraste e use o zoom apenas se algum dos quatro
-            marcadores ficar fora dele. A imagem é convertida para PNG e guardada de forma privada
-            nesta avaliação.
+            O quadro inicial acompanha a proporção do arquivo, inclusive folhas compactas. Arraste e
+            use o zoom apenas se algum dos quatro marcadores ficar fora dele. A imagem é convertida
+            para PNG e guardada de forma privada nesta avaliação.
           </p>
         </div>
       )}
