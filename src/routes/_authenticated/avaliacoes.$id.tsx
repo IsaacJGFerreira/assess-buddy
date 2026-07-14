@@ -668,11 +668,13 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
   const [identificationMode, setIdentificationMode] =
     useState<AnswerSheetIdentificationMode>("none");
   const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [blankDigitsOverride, setBlankDigitsOverride] = useState<number | null>(null);
   const [preview, setPreview] = useState<{
     identification: IdentificacaoFolhaResposta | null;
     identificationMode: AnswerSheetIdentificationMode;
     identifierDigits: number;
     aluno: Aluno | null;
+    eligibleStudents: Aluno[];
     persistenceUnavailable?: boolean;
   } | null>(null);
   const savedModel = useQuery({
@@ -685,7 +687,11 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
       avaliacao.turma_id ? listAlunosByTurma(avaliacao.turma_id) : Promise.resolve([]),
     enabled: Boolean(avaliacao.turma_id),
   });
-  const identifierDigits = determineIdentifierDigits(students.data ?? []);
+  const derivedIdentifierDigits = determineIdentifierDigits(students.data ?? []);
+  const identifierDigits =
+    identificationMode === "blank"
+      ? clampIdentifierDigits(blankDigitsOverride ?? derivedIdentifierDigits ?? DEFAULT_IDENTIFIER_DIGITS)
+      : derivedIdentifierDigits;
   const eligibleStudents = (students.data ?? []).filter((student) =>
     isStudentEligibleForPrefilledSheet(student, identifierDigits),
   );
