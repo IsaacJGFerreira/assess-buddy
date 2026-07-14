@@ -542,6 +542,33 @@
   padding: 1.5mm;
 }
 
+.answer-sheet-identifier-name {
+  max-width: 100%;
+  padding: 1mm 1.5mm;
+  border-bottom: 0.3mm solid #111;
+  overflow: hidden;
+  font-size: 8pt;
+  font-weight: 700;
+  line-height: 1.1;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.answer-sheet-identifier-digit-box {
+  display: inline-flex;
+  width: 5mm;
+  height: 5mm;
+  margin-bottom: 0.8mm;
+  align-items: center;
+  justify-content: center;
+  border: 0.35mm solid #111;
+  background: #fff;
+  font-size: 9pt;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .answer-sheet-numeric-title {
   padding: 1.2mm;
   background: #111;
