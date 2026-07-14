@@ -7,7 +7,7 @@ export interface FeedbackAssessment {
   titulo: string;
   disciplina: string | null;
   valor_total: number;
-  comentario_devolutiva: string | null;
+  comentario_devolutiva?: string | null;
 }
 
 export interface FeedbackStudent {
@@ -26,7 +26,10 @@ export interface FeedbackQuestion {
   desconto_erro: number;
   anulada: boolean;
   conteudo: string | null;
-  orientacao_correcao: string | null;
+  orientacao_correcao?: string | null;
+  resposta_modelo?: string | null;
+  resposta_modelo_imagem_path?: string | null;
+  resposta_modelo_imagem_url?: string | null;
 }
 
 export interface FeedbackResponse {
@@ -53,6 +56,12 @@ interface QuestionResult {
   feedback: string;
 }
 
+interface PreparedImage {
+  dataUrl: string;
+  width: number;
+  height: number;
+}
+
 const PAGE_WIDTH = 210;
 const PAGE_HEIGHT = 297;
 const MARGIN = 14;
@@ -70,7 +79,7 @@ export function calculateFeedbackScore(
   return Math.round(score * 100) / 100;
 }
 
-export function generateFeedbackPdf(input: FeedbackPdfInput): Blob {
+export async function generateFeedbackPdf(input: FeedbackPdfInput): Promise<Blob> {
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
   const responsesByQuestion = new Map(
     input.responses
@@ -98,18 +107,48 @@ export function generateFeedbackPdf(input: FeedbackPdfInput): Blob {
       fontSize?: number;
       bold?: boolean;
       lineHeight?: number;
+      gapAfter?: number;
     } = {},
   ) => {
     const x = options.x ?? MARGIN;
     const width = options.width ?? CONTENT_WIDTH;
     const fontSize = options.fontSize ?? 10;
     const lineHeight = options.lineHeight ?? fontSize * 0.42;
+    const lines = doc.splitTextToSize(cleanText(text), width) as string[];
+    const height = Math.max(lineHeight, lines.length * lineHeight);
+    addPageIfNeeded(height);
     doc.setFont("helvetica", options.bold ? "bold" : "normal");
     doc.setFontSize(fontSize);
-    const lines = doc.splitTextToSize(cleanText(text), width) as string[];
-    addPageIfNeeded(Math.max(lineHeight, lines.length * lineHeight));
     doc.text(lines, x, y);
-    y += Math.max(lineHeight, lines.length * lineHeight);
+    y += height + (options.gapAfter ?? 0);
+  };
+
+  const writeSectionTitle = (title: string) => {
+    addPageIfNeeded(10);
+    doc.setDrawColor(20, 20, 20);
+    doc.setLineWidth(0.35);
+    doc.line(MARGIN, y, PAGE_WIDTH - MARGIN, y);
+    y += 6;
+    writeWrapped(title, { fontSize: 10, bold: true, lineHeight: 4.5, gapAfter: 2 });
+  };
+
+  const addModelImage = async (url: string, questionNumber: number) => {
+    try {
+      const image = await prepareImage(url);
+      const maximumWidth = CONTENT_WIDTH - 10;
+      const maximumHeight = 72;
+      const scale = Math.min(maximumWidth / image.width, maximumHeight / image.height, 1);
+      const width = image.width * scale;
+      const height = image.height * scale;
+      addPageIfNeeded(height + 7);
+      doc.addImage(image.dataUrl, "JPEG", MARGIN + 5, y, width, height);
+      y += height + 4;
+    } catch {
+      writeWrapped(`Imagem da resposta-modelo da questão ${questionNumber} indisponível.`, {
+        fontSize: 8.5,
+        lineHeight: 4,
+      });
+    }
   };
 
   doc.setDrawColor(20, 20, 20);
@@ -148,29 +187,72 @@ export function generateFeedbackPdf(input: FeedbackPdfInput): Blob {
   doc.text(`${percentage}%`, PAGE_WIDTH - MARGIN - 4, y + 18, { align: "right" });
   y += 30;
 
-  if (input.assessment.comentario_devolutiva?.trim()) {
-    writeWrapped("COMENTÁRIO GERAL DO PROFESSOR", { fontSize: 10, bold: true, lineHeight: 5 });
-    writeWrapped(input.assessment.comentario_devolutiva, { fontSize: 10, lineHeight: 4.8 });
-    y += 3;
+  writeSectionTitle("GABARITO ORIGINAL DA PROVA");
+  writeWrapped(
+    "A seguir estão as respostas oficiais cadastradas pelo professor. Nas questões discursivas, a resposta-modelo pode conter texto, imagem ou ambos.",
+    { fontSize: 9, lineHeight: 4.2, gapAfter: 2 },
+  );
+
+  for (const question of input.questions) {
+    const modelText = question.resposta_modelo?.trim();
+    const imageUrl = question.resposta_modelo_imagem_url?.trim();
+    const estimatedHeight = question.tipo === "disc" ? 22 : 13;
+    addPageIfNeeded(estimatedHeight);
+    doc.setDrawColor(190, 190, 190);
+    doc.roundedRect(MARGIN, y, CONTENT_WIDTH, estimatedHeight, 1.5, 1.5);
+    const boxTop = y;
+    y += 5;
+    writeWrapped(`Questão ${question.numero} · ${questionTypeLabel(question.tipo)}`, {
+      x: MARGIN + 4,
+      width: CONTENT_WIDTH - 8,
+      fontSize: 9.5,
+      bold: true,
+      lineHeight: 4.2,
+    });
+    if (question.anulada) {
+      writeWrapped("Gabarito: questão anulada", {
+        x: MARGIN + 4,
+        width: CONTENT_WIDTH - 8,
+        fontSize: 9,
+        lineHeight: 4,
+      });
+    } else if (question.tipo === "disc") {
+      writeWrapped(`Resposta-modelo em texto: ${modelText || "Não informada"}`, {
+        x: MARGIN + 4,
+        width: CONTENT_WIDTH - 8,
+        fontSize: 9,
+        lineHeight: 4,
+      });
+      if (imageUrl) {
+        y = Math.max(y + 2, boxTop + estimatedHeight + 2);
+        await addModelImage(imageUrl, question.numero);
+      }
+    } else {
+      writeWrapped(`Gabarito: ${question.gabarito?.trim() || "Não informado"}`, {
+        x: MARGIN + 4,
+        width: CONTENT_WIDTH - 8,
+        fontSize: 9,
+        lineHeight: 4,
+      });
+    }
+    y = Math.max(y + 3, boxTop + estimatedHeight + 3);
   }
 
-  writeWrapped("RESULTADO QUESTÃO A QUESTÃO", { fontSize: 10, bold: true, lineHeight: 5 });
-  y += 1;
-
+  writeSectionTitle("RESULTADO DO ALUNO");
   for (const question of input.questions) {
     const response = responsesByQuestion.get(question.id);
     const result = evaluateQuestion(question, response);
+    const isDiscursive = question.tipo === "disc";
     const details = [
       question.conteudo ? `Conteúdo: ${question.conteudo}` : "",
       `Resposta do aluno: ${result.answer}`,
-      question.tipo === "disc"
-        ? `Nota manual: ${formatNumber(result.points)} de ${formatNumber(question.valor)}`
+      isDiscursive
+        ? `Nota manual: ${formatNumber(result.points)} de ${formatNumber(Number(question.valor))}`
         : `Gabarito: ${result.expected}`,
       `Situação: ${result.status}`,
     ].filter(Boolean);
-    const orientation = question.orientacao_correcao?.trim();
-    const feedback = result.feedback.trim();
-    const estimatedHeight = 18 + details.length * 4 + (orientation ? 12 : 0) + (feedback ? 12 : 0);
+    const feedback = isDiscursive ? result.feedback.trim() : "";
+    const estimatedHeight = 17 + details.length * 4 + (feedback ? 13 : 0);
     addPageIfNeeded(estimatedHeight);
 
     doc.setDrawColor(185, 185, 185);
@@ -192,8 +274,8 @@ export function generateFeedbackPdf(input: FeedbackPdfInput): Blob {
         lineHeight: 4,
       });
     }
-    if (orientation) {
-      writeWrapped(`Orientação de correção: ${orientation}`, {
+    if (feedback) {
+      writeWrapped(`Comentário do professor: ${feedback}`, {
         x: MARGIN + 4,
         width: CONTENT_WIDTH - 8,
         fontSize: 9,
@@ -201,30 +283,25 @@ export function generateFeedbackPdf(input: FeedbackPdfInput): Blob {
         lineHeight: 4,
       });
     }
-    if (feedback) {
-      writeWrapped(`Comentário individual: ${feedback}`, {
-        x: MARGIN + 4,
-        width: CONTENT_WIDTH - 8,
-        fontSize: 9,
-        lineHeight: 4,
-      });
-    }
     y = Math.max(y + 4, boxTop + estimatedHeight + 3);
   }
 
-  addPageIfNeeded(26);
-  y += 2;
-  writeWrapped("ORIENTAÇÃO PARA A CORREÇÃO DO ALUNO", { fontSize: 10, bold: true, lineHeight: 5 });
+  addPageIfNeeded(25);
+  writeSectionTitle("ORIENTAÇÃO PARA O ALUNO");
   writeWrapped(
-    "Revise cada questão indicada, explique com suas próprias palavras onde ocorreu o erro e refaça o raciocínio. Nas questões discursivas, use a orientação do professor para reorganizar a resposta, apresentar os conceitos necessários e justificar cada etapa.",
+    "Confira o gabarito original, reveja as questões objetivas incorretas e refaça o raciocínio. Nas discursivas, compare sua resposta com a resposta-modelo e utilize o comentário do professor para reorganizar os conceitos, as justificativas e as etapas da resolução.",
     { fontSize: 9.5, lineHeight: 4.5 },
   );
 
-  doc.setFontSize(8);
-  doc.setTextColor(100, 100, 100);
-  doc.text("Documento gerado automaticamente pelo sistema Folha.", MARGIN, PAGE_HEIGHT - 8);
+  const totalPages = doc.getNumberOfPages();
+  for (let page = 1; page <= totalPages; page += 1) {
+    doc.setPage(page);
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 100);
+    doc.text("Documento gerado automaticamente pelo sistema Folha.", MARGIN, PAGE_HEIGHT - 8);
+    doc.text(`${page}/${totalPages}`, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 8, { align: "right" });
+  }
   doc.setTextColor(0, 0, 0);
-
   return doc.output("blob");
 }
 
@@ -238,15 +315,15 @@ function evaluateQuestion(
       expected: "Questão anulada",
       points: Number(question.valor),
       status: "Anulada",
-      feedback: response?.feedback || "",
+      feedback: question.tipo === "disc" ? response?.feedback || "" : "",
     };
   }
 
   if (question.tipo === "disc") {
     const manual = clamp(Number(response?.nota_manual ?? 0), 0, Number(question.valor));
     return {
-      answer: response?.resposta?.trim() || "Resposta discursiva avaliada manualmente",
-      expected: "Correção manual",
+      answer: response?.resposta?.trim() || "Não registrada",
+      expected: question.resposta_modelo?.trim() || "Resposta-modelo não informada",
       points: manual,
       status: response?.nota_manual == null ? "Aguardando nota manual" : "Corrigida manualmente",
       feedback: response?.feedback || "",
@@ -256,7 +333,7 @@ function evaluateQuestion(
   const answer = response?.resposta?.trim() || "Em branco";
   const expected = question.gabarito?.trim().toUpperCase() || "—";
   if (!response?.resposta?.trim()) {
-    return { answer, expected, points: 0, status: "Em branco", feedback: response?.feedback || "" };
+    return { answer, expected, points: 0, status: "Em branco", feedback: "" };
   }
 
   const correct = response.resposta.trim().toUpperCase() === expected;
@@ -265,8 +342,42 @@ function evaluateQuestion(
     expected,
     points: correct ? Number(question.valor) : -Number(question.desconto_erro || 0),
     status: correct ? "Correta" : "Incorreta",
-    feedback: response.feedback || "",
+    feedback: "",
   };
+}
+
+async function prepareImage(url: string): Promise<PreparedImage> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("Imagem indisponível");
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const image = await loadImage(objectUrl);
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth || image.width;
+    canvas.height = image.naturalHeight || image.height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Não foi possível preparar a imagem");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0);
+    return {
+      dataUrl: canvas.toDataURL("image/jpeg", 0.9),
+      width: canvas.width,
+      height: canvas.height,
+    };
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Não foi possível carregar a imagem"));
+    image.src = url;
+  });
 }
 
 function questionTypeLabel(type: FeedbackQuestionType): string {
