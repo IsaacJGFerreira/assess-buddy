@@ -38,7 +38,9 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import {
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
   ChevronDown,
   Copy,
   Download,
@@ -127,31 +129,45 @@ function AvaliacaoDetail() {
 // ================= CONFIG =================
 function ConfigTab({ avaliacaoId }: { avaliacaoId: string }) {
   const qc = useQueryClient();
+  const [quantidades, setQuantidades] = useState<Record<TipoQuestao, string>>({
+    mc: "1",
+    ce: "1",
+    num: "1",
+  });
   const { data: questoes = [] } = useQuery({
     queryKey: ["questoes", avaliacaoId],
     queryFn: () => listQuestoes(avaliacaoId),
   });
 
   const add = useMutation({
-    mutationFn: async (tipo: TipoQuestao) => {
+    mutationFn: async ({ tipo, quantidade }: { tipo: TipoQuestao; quantidade: number }) => {
+      if (!Number.isInteger(quantidade) || quantidade < 1 || quantidade > 100) {
+        throw new Error("Informe uma quantidade inteira entre 1 e 100.");
+      }
       const { data: u } = await supabase.auth.getUser();
-      const numero = (questoes.at(-1)?.numero ?? 0) + 1;
-      const base = {
+      if (!u.user) throw new Error("Sua sessão expirou. Entre novamente para adicionar itens.");
+
+      const primeiroNumero = Math.max(0, ...questoes.map((questao) => questao.numero)) + 1;
+      const novosItens = Array.from({ length: quantidade }, (_, index) => ({
         avaliacao_id: avaliacaoId,
-        owner_id: u.user!.id,
-        numero,
+        owner_id: u.user.id,
+        numero: primeiroNumero + index,
         tipo,
         valor: 1,
+        desconto_erro: 0,
         anulada: false,
         qtd_alternativas: tipo === "mc" ? 5 : tipo === "ce" ? 2 : null,
         num_digitos: tipo === "num" ? 3 : null,
         gabarito: null,
         conteudo: null,
-      };
-      const { error } = await supabase.from("questoes").insert(base);
+      }));
+      const { error } = await supabase.from("questoes").insert(novosItens);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["questoes", avaliacaoId] }),
+    onSuccess: (_, { quantidade }) => {
+      toast.success(quantidade === 1 ? "Item adicionado." : `${quantidade} itens adicionados.`);
+      qc.invalidateQueries({ queryKey: ["questoes", avaliacaoId] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -175,33 +191,107 @@ function ConfigTab({ avaliacaoId }: { avaliacaoId: string }) {
   const duplicate = useMutation({
     mutationFn: async (q: Questao) => {
       const { data: u } = await supabase.auth.getUser();
-      const numero = (questoes.at(-1)?.numero ?? 0) + 1;
-      const { id, created_at, ...rest } = q as any;
-      void id;
-      void created_at;
-      const { error } = await supabase
-        .from("questoes")
-        .insert({ ...rest, numero, owner_id: u.user!.id });
+      if (!u.user) throw new Error("Sua sessão expirou. Entre novamente para duplicar itens.");
+      const numero = Math.max(0, ...questoes.map((questao) => questao.numero)) + 1;
+      const { error } = await supabase.from("questoes").insert({
+        avaliacao_id: q.avaliacao_id,
+        owner_id: u.user.id,
+        numero,
+        tipo: q.tipo,
+        valor: q.valor,
+        desconto_erro: q.desconto_erro,
+        anulada: q.anulada,
+        qtd_alternativas: q.qtd_alternativas,
+        num_digitos: q.num_digitos,
+        gabarito: q.gabarito,
+        conteudo: q.conteudo,
+      });
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["questoes", avaliacaoId] }),
+    onError: (e: Error) => toast.error(e.message),
   });
+
+  const move = useMutation({
+    mutationFn: async ({ id, novaPosicao }: { id: string; novaPosicao: number }) => {
+      const { error } = await supabase.rpc("mover_questao", {
+        p_questao_id: id,
+        p_nova_posicao: novaPosicao,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["questoes", avaliacaoId] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const adicionarItens = (tipo: TipoQuestao) => {
+    const quantidade = Number(quantidades[tipo]);
+    if (!Number.isInteger(quantidade) || quantidade < 1 || quantidade > 100) {
+      toast.error("Informe uma quantidade inteira entre 1 e 100.");
+      return;
+    }
+    add.mutate({ tipo, quantidade });
+  };
+
+  const tiposParaAdicionar: Array<{
+    tipo: TipoQuestao;
+    titulo: string;
+    detalhe: string;
+    variant: "default" | "secondary";
+  }> = [
+    { tipo: "mc", titulo: "Múltipla escolha", detalhe: "5 alternativas", variant: "default" },
+    { tipo: "ce", titulo: "Certo/Errado", detalhe: "Opções C e E", variant: "secondary" },
+    { tipo: "num", titulo: "Numérica", detalhe: "3 dígitos", variant: "secondary" },
+  ];
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2 flex-wrap">
-        <Button size="sm" onClick={() => add.mutate("mc")}>
-          <Plus className="h-4 w-4 mr-1" />
-          Múltipla escolha
-        </Button>
-        <Button size="sm" variant="secondary" onClick={() => add.mutate("ce")}>
-          <Plus className="h-4 w-4 mr-1" />
-          Certo/Errado
-        </Button>
-        <Button size="sm" variant="secondary" onClick={() => add.mutate("num")}>
-          <Plus className="h-4 w-4 mr-1" />
-          Numérica
-        </Button>
+      <div className="grid gap-3 lg:grid-cols-3">
+        {tiposParaAdicionar.map(({ tipo, titulo, detalhe, variant }) => (
+          <div key={tipo} className="rounded-lg border border-border bg-card p-3">
+            <div className="mb-2">
+              <p className="font-medium">{titulo}</p>
+              <p className="text-xs text-muted-foreground">{detalhe}</p>
+            </div>
+            <div className="flex gap-2">
+              <Input
+                className="h-9 w-24"
+                type="number"
+                min={1}
+                max={100}
+                step={1}
+                inputMode="numeric"
+                aria-label={`Quantidade de itens de ${titulo}`}
+                value={quantidades[tipo]}
+                onChange={(event) =>
+                  setQuantidades((atual) => ({ ...atual, [tipo]: event.target.value }))
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") adicionarItens(tipo);
+                }}
+              />
+              <Button
+                className="flex-1"
+                size="sm"
+                variant={variant}
+                disabled={add.isPending}
+                onClick={() => adicionarItens(tipo)}
+              >
+                {add.isPending && add.variables?.tipo === tipo ? (
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="mr-1 h-4 w-4" />
+                )}
+                Adicionar
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
+        Valor e desconto aceitam decimais com ponto ou vírgula. O desconto é aplicado somente em
+        respostas erradas; respostas em branco não perdem pontos.
       </div>
 
       <div className="rounded-lg border border-border bg-card overflow-x-auto">
@@ -213,13 +303,14 @@ function ConfigTab({ avaliacaoId }: { avaliacaoId: string }) {
               <th className="px-3 py-2">Formato</th>
               <th className="px-3 py-2">Gabarito</th>
               <th className="px-3 py-2 w-24">Valor</th>
+              <th className="px-3 py-2 w-32">Desconto no erro</th>
               <th className="px-3 py-2">Conteúdo</th>
               <th className="px-3 py-2 w-20">Anulada</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {questoes.map((q) => (
+            {questoes.map((q, index) => (
               <tr key={q.id} className="border-t border-border">
                 <td className="px-3 py-2 font-medium">{q.numero}</td>
                 <td className="px-3 py-2">{TIPO_LABEL[q.tipo]}</td>
@@ -271,15 +362,19 @@ function ConfigTab({ avaliacaoId }: { avaliacaoId: string }) {
                   />
                 </td>
                 <td className="px-3 py-2">
-                  <Input
-                    className="h-8"
-                    type="number"
-                    step="0.1"
-                    defaultValue={q.valor}
-                    onBlur={(e) => {
-                      const v = Number(e.target.value);
-                      if (v !== Number(q.valor)) update.mutate({ id: q.id, patch: { valor: v } });
-                    }}
+                  <DecimalScoreInput
+                    value={Number(q.valor)}
+                    ariaLabel={`Valor do item ${q.numero}`}
+                    onChange={(valor) => update.mutate({ id: q.id, patch: { valor } })}
+                  />
+                </td>
+                <td className="px-3 py-2">
+                  <DecimalScoreInput
+                    value={Number(q.desconto_erro ?? 0)}
+                    ariaLabel={`Desconto por erro do item ${q.numero}`}
+                    onChange={(desconto_erro) =>
+                      update.mutate({ id: q.id, patch: { desconto_erro } })
+                    }
                   />
                 </td>
                 <td className="px-3 py-2">
@@ -298,19 +393,53 @@ function ConfigTab({ avaliacaoId }: { avaliacaoId: string }) {
                     onCheckedChange={(v) => update.mutate({ id: q.id, patch: { anulada: !!v } })}
                   />
                 </td>
-                <td className="px-3 py-2 flex gap-1">
-                  <Button size="icon" variant="ghost" onClick={() => duplicate.mutate(q)}>
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                  <Button size="icon" variant="ghost" onClick={() => del.mutate(q.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                <td className="px-3 py-2">
+                  <div className="flex gap-1">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      title="Mover para cima"
+                      aria-label={`Mover item ${q.numero} para cima`}
+                      disabled={index === 0 || move.isPending}
+                      onClick={() => move.mutate({ id: q.id, novaPosicao: index })}
+                    >
+                      <ArrowUp className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      title="Mover para baixo"
+                      aria-label={`Mover item ${q.numero} para baixo`}
+                      disabled={index === questoes.length - 1 || move.isPending}
+                      onClick={() => move.mutate({ id: q.id, novaPosicao: index + 2 })}
+                    >
+                      <ArrowDown className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      title="Duplicar item"
+                      aria-label={`Duplicar item ${q.numero}`}
+                      onClick={() => duplicate.mutate(q)}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      title="Excluir item"
+                      aria-label={`Excluir item ${q.numero}`}
+                      onClick={() => del.mutate(q.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}
             {questoes.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">
+                <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
                   Adicione a primeira questão acima.
                 </td>
               </tr>
@@ -320,6 +449,51 @@ function ConfigTab({ avaliacaoId }: { avaliacaoId: string }) {
       </div>
     </div>
   );
+}
+
+function DecimalScoreInput({
+  value,
+  ariaLabel,
+  onChange,
+}: {
+  value: number;
+  ariaLabel: string;
+  onChange: (value: number) => void;
+}) {
+  const formattedValue = formatDecimal(value);
+
+  return (
+    <Input
+      key={formattedValue}
+      className="h-8 min-w-20"
+      type="text"
+      inputMode="decimal"
+      aria-label={ariaLabel}
+      defaultValue={formattedValue}
+      onBlur={(event) => {
+        const parsedValue = parseNonNegativeDecimal(event.target.value);
+        if (parsedValue === null) {
+          toast.error("Informe um valor igual ou maior que zero.");
+          event.target.value = formattedValue;
+          return;
+        }
+        event.target.value = formatDecimal(parsedValue);
+        if (parsedValue !== value) onChange(parsedValue);
+      }}
+    />
+  );
+}
+
+function parseNonNegativeDecimal(value: string): number | null {
+  const normalizedValue = value.trim().replace(",", ".");
+  if (!normalizedValue) return null;
+  const parsed = Number(normalizedValue);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.round(parsed * 100) / 100;
+}
+
+function formatDecimal(value: number): string {
+  return String(Math.round(value * 100) / 100);
 }
 
 function GabaritoInput({ q, onChange }: { q: Questao; onChange: (v: string) => void }) {

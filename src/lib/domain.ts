@@ -62,6 +62,7 @@ export interface Questao {
   num_digitos: number | null;
   gabarito: string | null;
   valor: number;
+  desconto_erro: number;
   anulada: boolean;
   conteudo: string | null;
 }
@@ -253,6 +254,7 @@ export async function createOrGetAnswerSheet({
       numDigitos: questao.num_digitos,
       gabarito: questao.gabarito,
       valor: Number(questao.valor),
+      descontoErro: Number(questao.desconto_erro),
       anulada: questao.anulada,
       conteudo: questao.conteudo,
     })),
@@ -441,7 +443,7 @@ export function corrigirQuestao(
   if (!gab) return { situacao: "incorreta", pontos: 0 };
   return ans === gab
     ? { situacao: "correta", pontos: Number(q.valor) }
-    : { situacao: "incorreta", pontos: 0 };
+    : { situacao: "incorreta", pontos: -Number(q.desconto_erro ?? 0) };
 }
 
 export function calcularNotaAluno(

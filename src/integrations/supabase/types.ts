@@ -338,6 +338,7 @@ export type Database = {
           avaliacao_id: string
           conteudo: string | null
           created_at: string
+          desconto_erro: number
           gabarito: string | null
           id: string
           num_digitos: number | null
@@ -353,6 +354,7 @@ export type Database = {
           avaliacao_id: string
           conteudo?: string | null
           created_at?: string
+          desconto_erro?: number
           gabarito?: string | null
           id?: string
           num_digitos?: number | null
@@ -368,6 +370,7 @@ export type Database = {
           avaliacao_id?: string
           conteudo?: string | null
           created_at?: string
+          desconto_erro?: number
           gabarito?: string | null
           id?: string
           num_digitos?: number | null
@@ -504,6 +507,13 @@ export type Database = {
           qr_payload: string
           versao: number
         }[]
+      }
+      mover_questao: {
+        Args: {
+          p_nova_posicao: number
+          p_questao_id: string
+        }
+        Returns: undefined
       }
     }
     Enums: {
