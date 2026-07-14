@@ -138,6 +138,7 @@ function ConfigTab({ avaliacaoId }: { avaliacaoId: string }) {
     mc: "1",
     ce: "1",
     num: "1",
+    disc: "1",
   });
   const { data: questoes = [] } = useQuery({
     queryKey: ["questoes", avaliacaoId],
@@ -274,6 +275,7 @@ function ConfigTab({ avaliacaoId }: { avaliacaoId: string }) {
     { tipo: "mc", titulo: "Múltipla escolha", detalhe: "5 alternativas", variant: "default" },
     { tipo: "ce", titulo: "Certo/Errado", detalhe: "Opções C e E", variant: "secondary" },
     { tipo: "num", titulo: "Numérica", detalhe: "3 dígitos", variant: "secondary" },
+    { tipo: "disc", titulo: "Discursiva", detalhe: "Correção manual", variant: "secondary" },
   ];
 
   return (

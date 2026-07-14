@@ -476,6 +476,7 @@ export function corrigirQuestao(
   resposta: string | null | undefined,
 ): { situacao: Situacao; pontos: number } {
   if (q.anulada) return { situacao: "anulada", pontos: Number(q.valor) };
+  if (q.tipo === "disc") return { situacao: "branco", pontos: 0 };
   const r = (resposta ?? "").trim();
   if (!r) return { situacao: "branco", pontos: 0 };
   const gab = (q.gabarito ?? "").trim().toUpperCase();
