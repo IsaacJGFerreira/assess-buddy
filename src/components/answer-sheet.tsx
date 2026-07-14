@@ -223,18 +223,34 @@ function IdentifierCard({
   digits,
   matricula,
   pageNumber,
+  studentName,
 }: {
   digits: number;
   matricula: string | null;
   pageNumber: number;
+  studentName: string | null;
 }) {
   return (
     <aside className="answer-sheet-identifier-card" aria-label="Matrícula">
+      {studentName && (
+        <div className="answer-sheet-identifier-name" title={studentName}>
+          {studentName}
+        </div>
+      )}
       <div className="answer-sheet-identifier-title">Matrícula</div>
       <div className="answer-sheet-identifier-grid">
         {Array.from({ length: digits }, (_, digitIndex) => (
           <div className="answer-sheet-numeric-column" key={digitIndex}>
-            <strong>{digitIndex + 1}</strong>
+            <span
+              className="answer-sheet-identifier-digit-box"
+              aria-label={
+                matricula
+                  ? `Dígito ${digitIndex + 1} da matrícula`
+                  : `Escreva o dígito ${digitIndex + 1} da matrícula`
+              }
+            >
+              {matricula?.[digitIndex] ?? ""}
+            </span>
             {Array.from({ length: 10 }, (_, digit) => (
               <Bubble
                 key={digit}
