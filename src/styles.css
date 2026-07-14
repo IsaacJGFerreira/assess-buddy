@@ -480,6 +480,11 @@
   font-size: 6pt;
 }
 
+.answer-sheet-bubble.is-prefilled {
+  background: #111;
+  color: #fff;
+}
+
 .answer-sheet-question-note {
   overflow: hidden;
   color: #444;
@@ -512,6 +517,29 @@
   align-self: start;
   border: 0.45mm solid #111;
   break-inside: avoid;
+}
+
+.answer-sheet-identifier-card {
+  width: max-content;
+  align-self: start;
+  border: 0.45mm solid #111;
+  break-inside: avoid;
+}
+
+.answer-sheet-identifier-title {
+  padding: 1.2mm;
+  background: #111;
+  color: #fff;
+  font-size: 8pt;
+  font-weight: 700;
+  text-align: center;
+}
+
+.answer-sheet-identifier-grid {
+  display: flex;
+  justify-content: center;
+  gap: 1.1mm;
+  padding: 1.5mm;
 }
 
 .answer-sheet-numeric-title {

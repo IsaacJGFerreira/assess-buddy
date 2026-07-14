@@ -35,10 +35,15 @@ import {
   collectAnswerSheetOmrGeometry,
   OmrAnalysisError,
   type AnswerSheetOmrAnalysis,
+  type OmrIdentifierReading,
   type OmrQuestionReading,
   type OmrRasterImage,
   type OmrReviewReason,
 } from "@/lib/answer-sheet-omr";
+import {
+  resolveMatriculaReading,
+  type MatriculaResolution,
+} from "@/lib/answer-sheet-identification";
 import {
   alternativas,
   confirmAnswerSheetScanReading,
@@ -79,6 +84,15 @@ export function AnswerSheetMarkReader({
     markerConfidence: number;
     averageConfidence: number;
   } | null>(() => restoreSavedMeta(scan.resultado_leitura));
+  const [identifierReading, setIdentifierReading] = useState<OmrIdentifierReading | null>(
+    () => restoreSavedIdentifier(scan.resultado_leitura).reading,
+  );
+  const [identifierResolution, setIdentifierResolution] = useState<MatriculaResolution | null>(
+    () => restoreSavedIdentifier(scan.resultado_leitura).resolution,
+  );
+  const [identifierManuallyResolved, setIdentifierManuallyResolved] = useState(
+    () => restoreSavedIdentifier(scan.resultado_leitura).manuallyResolved,
+  );
   const [overlay, setOverlay] = useState<string | null>(null);
   const [evidenceByQuestion, setEvidenceByQuestion] = useState<Record<string, string>>({});
   const [hasUnsavedReview, setHasUnsavedReview] = useState(false);
@@ -160,25 +174,60 @@ export function AnswerSheetMarkReader({
       } finally {
         image.close();
       }
-      const payload = buildReadingPayload(result.readings, {
-        modeloId: selectedModel.id,
-        pagina: pageNumber,
-        threshold: result.threshold,
-        markerConfidence: result.markerConfidence,
-        averageConfidence: result.averageConfidence,
-      });
+      const resolution = resolveMatriculaReading(
+        result.identifier,
+        alunos,
+        restored.identification.digits,
+      );
+      const resolvedStudentId =
+        resolution.status === "linked"
+          ? (resolution.studentId ?? "")
+          : resolution.status === "not_found" || resolution.status === "inconsistent"
+            ? ""
+            : studentId;
+      const payload = buildReadingPayload(
+        result.readings,
+        {
+          modeloId: selectedModel.id,
+          pagina: pageNumber,
+          threshold: result.threshold,
+          markerConfidence: result.markerConfidence,
+          averageConfidence: result.averageConfidence,
+        },
+        {
+          reading: result.identifier,
+          resolution,
+          manuallyResolved: false,
+        },
+      );
       await saveAnswerSheetScanReading({
         scanId: scan.id,
-        alunoId: studentId,
+        alunoId: resolvedStudentId,
         modeloId: selectedModel.id,
         pagina: pageNumber,
         resultado: payload,
         confianca: result.averageConfidence,
       });
-      return { result, overlay: nextOverlay, evidence: nextEvidence };
+      return {
+        result,
+        overlay: nextOverlay,
+        evidence: nextEvidence,
+        resolution,
+        resolvedStudentId,
+      };
     },
-    onSuccess: async ({ result, overlay: nextOverlay, evidence }) => {
+    onSuccess: async ({
+      result,
+      overlay: nextOverlay,
+      evidence,
+      resolution,
+      resolvedStudentId,
+    }) => {
       setReadings(result.readings);
+      setIdentifierReading(result.identifier);
+      setIdentifierResolution(resolution);
+      setIdentifierManuallyResolved(false);
+      setStudentId(resolvedStudentId);
       setAnalysisMeta({
         threshold: result.threshold,
         markerConfidence: result.markerConfidence,
@@ -190,7 +239,13 @@ export function AnswerSheetMarkReader({
       reviewRevisionRef.current = 0;
       await queryClient.invalidateQueries({ queryKey: ["answer-sheet-scans", avaliacao.id] });
       const reviewCount = result.readings.filter((reading) => reading.requiresReview).length;
-      if (reviewCount > 0) {
+      if (resolution.status === "inconsistent") {
+        toast.warning("Inconsistência na matrícula. Escolha o aluno ou confirme sem vínculo.");
+      } else if (resolution.status === "linked") {
+        toast.success(`Matrícula vinculada automaticamente a ${resolution.studentName}.`);
+      } else if (resolution.status === "not_found") {
+        toast.info("Matrícula não encontrada. A leitura ficou sem aluno vinculado.");
+      } else if (reviewCount > 0) {
         toast.warning(
           `${reviewCount} resposta${reviewCount > 1 ? "s precisam" : " precisa"} de revisão.`,
         );
@@ -217,13 +272,21 @@ export function AnswerSheetMarkReader({
       if (!selectedModel || !analysisMeta) {
         throw new Error("A leitura precisa estar completa antes de salvar a conferência.");
       }
-      const payload = buildReadingPayload(reviewedReadings, {
-        modeloId: selectedModel.id,
-        pagina: pageNumber,
-        threshold: analysisMeta.threshold,
-        markerConfidence: analysisMeta.markerConfidence,
-        averageConfidence: average(reviewedReadings.map((reading) => reading.confidence)),
-      });
+      const payload = buildReadingPayload(
+        reviewedReadings,
+        {
+          modeloId: selectedModel.id,
+          pagina: pageNumber,
+          threshold: analysisMeta.threshold,
+          markerConfidence: analysisMeta.markerConfidence,
+          averageConfidence: average(reviewedReadings.map((reading) => reading.confidence)),
+        },
+        {
+          reading: identifierReading,
+          resolution: identifierResolution,
+          manuallyResolved: identifierManuallyResolved,
+        },
+      );
       await saveAnswerSheetScanReading({
         scanId: scan.id,
         alunoId: studentId,
@@ -258,13 +321,24 @@ export function AnswerSheetMarkReader({
       if (unresolved.length > 0) {
         throw new Error("Revise todas as respostas destacadas antes de confirmar.");
       }
-      const payload = buildReadingPayload(readings, {
-        modeloId: selectedModel.id,
-        pagina: pageNumber,
-        threshold: analysisMeta.threshold,
-        markerConfidence: analysisMeta.markerConfidence,
-        averageConfidence: average(readings.map((reading) => reading.confidence)),
-      });
+      if (identifierResolution?.status === "inconsistent" && !identifierManuallyResolved) {
+        throw new Error("Resolva a inconsistência na matrícula antes de confirmar.");
+      }
+      const payload = buildReadingPayload(
+        readings,
+        {
+          modeloId: selectedModel.id,
+          pagina: pageNumber,
+          threshold: analysisMeta.threshold,
+          markerConfidence: analysisMeta.markerConfidence,
+          averageConfidence: average(readings.map((reading) => reading.confidence)),
+        },
+        {
+          reading: identifierReading,
+          resolution: identifierResolution,
+          manuallyResolved: identifierManuallyResolved,
+        },
+      );
       await confirmAnswerSheetScanReading({
         scanId: scan.id,
         alunoId: studentId,
@@ -309,8 +383,19 @@ export function AnswerSheetMarkReader({
     setAnalysisMeta(null);
     setOverlay(null);
     setEvidenceByQuestion({});
+    setIdentifierReading(null);
+    setIdentifierResolution(null);
+    setIdentifierManuallyResolved(false);
     setHasUnsavedReview(false);
     reviewRevisionRef.current = 0;
+  }
+
+  function changeStudent(value: string) {
+    setStudentId(value === "__unlinked__" ? "" : value);
+    if (identifierResolution && identifierResolution.status !== "not_present") {
+      setIdentifierManuallyResolved(true);
+      setHasUnsavedReview(true);
+    }
   }
 
   function reviewReading(questionId: string, value: string | null, resolved = true) {
@@ -402,12 +487,7 @@ export function AnswerSheetMarkReader({
       <div className="grid gap-4 rounded-lg border border-border bg-muted/20 p-4 md:grid-cols-3">
         <div className="space-y-1.5">
           <Label>Aluno</Label>
-          <Select
-            value={studentId || "__unlinked__"}
-            onValueChange={(value) => {
-              setStudentId(value === "__unlinked__" ? "" : value);
-            }}
-          >
+          <Select value={studentId || "__unlinked__"} onValueChange={changeStudent}>
             <SelectTrigger>
               <SelectValue placeholder="Selecione o aluno" />
             </SelectTrigger>
@@ -459,6 +539,19 @@ export function AnswerSheetMarkReader({
           Você pode ler e confirmar a folha sem aluno. Cadastre alunos apenas quando quiser lançar
           as respostas individualmente.
         </div>
+      )}
+
+      {identifierResolution && identifierResolution.status !== "not_present" && (
+        <IdentifierResolutionNotice
+          resolution={identifierResolution}
+          manuallyResolved={identifierManuallyResolved}
+          selectedStudentName={alunos.find((student) => student.id === studentId)?.nome ?? null}
+          onKeepUnlinked={() => {
+            setStudentId("");
+            setIdentifierManuallyResolved(true);
+            setHasUnsavedReview(true);
+          }}
+        />
       )}
 
       <div className="flex flex-wrap items-center gap-3">
@@ -584,7 +677,12 @@ export function AnswerSheetMarkReader({
                   confirm.mutate();
                 }
               }}
-              disabled={unresolved.length > 0 || saveReview.isPending || confirm.isPending}
+              disabled={
+                unresolved.length > 0 ||
+                (identifierResolution?.status === "inconsistent" && !identifierManuallyResolved) ||
+                saveReview.isPending ||
+                confirm.isPending
+              }
             >
               {confirm.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -613,11 +711,85 @@ export function AnswerSheetMarkReader({
                 version: selectedModel.versao,
                 qrPayload: "AB1|REFERENCIA-OMR",
               }}
+              identificationMode={restored.identification.mode}
+              identifierDigits={restored.identification.digits}
             />
           </div>
         </div>
       )}
     </section>
+  );
+}
+
+function IdentifierResolutionNotice({
+  resolution,
+  manuallyResolved,
+  selectedStudentName,
+  onKeepUnlinked,
+}: {
+  resolution: MatriculaResolution;
+  manuallyResolved: boolean;
+  selectedStudentName: string | null;
+  onKeepUnlinked: () => void;
+}) {
+  if (manuallyResolved) {
+    return (
+      <div className="flex gap-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+        <p>
+          Vínculo conferido manualmente:{" "}
+          <strong>{selectedStudentName ?? "sem aluno vinculado"}</strong>.
+          {resolution.status === "inconsistent" && " A inconsistência na matrícula foi resolvida."}
+        </p>
+      </div>
+    );
+  }
+  if (resolution.status === "linked") {
+    return (
+      <div className="flex gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+        <p>
+          Matrícula <strong>{resolution.value}</strong> vinculada automaticamente a{" "}
+          <strong>{resolution.studentName}</strong>.
+        </p>
+      </div>
+    );
+  }
+  if (resolution.status === "not_found") {
+    return (
+      <div className="flex gap-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+        <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+        <p>
+          A matrícula <strong>{resolution.value}</strong> não pertence a nenhum aluno cadastrado. A
+          leitura continuará sem aluno vinculado.
+        </p>
+      </div>
+    );
+  }
+  if (resolution.status === "blank") {
+    return (
+      <div className="rounded-md border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+        Nenhuma matrícula foi marcada. Você pode selecionar um aluno agora ou manter a leitura sem
+        vínculo.
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+      <div className="flex gap-3">
+        <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+        <div>
+          <strong>Inconsistência na matrícula</strong>
+          <p className="mt-0.5 text-amber-900">
+            A marcação está incompleta, duplicada ou corresponde a mais de um aluno. Selecione o
+            aluno acima ou confirme sem vínculo.
+          </p>
+        </div>
+      </div>
+      <Button type="button" size="sm" variant="outline" onClick={onKeepUnlinked}>
+        Manter sem vínculo
+      </Button>
+    </div>
   );
 }
 
@@ -953,7 +1125,11 @@ function createAnalysisOverlay(image: ImageBitmap, analysis: AnswerSheetOmrAnaly
     context.strokeStyle = "#06b6d4";
     context.strokeRect(marker.x * scale - 8, marker.y * scale - 8, 16, 16);
   }
-  for (const reading of analysis.readings) {
+  const visualReadings: Array<OmrQuestionReading | OmrIdentifierReading> = [
+    ...analysis.readings,
+    ...(analysis.identifier ? [analysis.identifier] : []),
+  ];
+  for (const reading of visualReadings) {
     for (const sample of reading.samples) {
       const radius = Math.max(3, sample.imageRadius * scale);
       context.beginPath();
@@ -1041,12 +1217,12 @@ function createQuestionEvidenceImages(
 }
 
 function isReadSample(
-  reading: OmrQuestionReading,
-  sample: OmrQuestionReading["samples"][number],
+  reading: OmrQuestionReading | OmrIdentifierReading,
+  sample: (OmrQuestionReading | OmrIdentifierReading)["samples"][number],
   threshold: number,
 ): boolean {
   if (reading.value !== null) {
-    return reading.kind === "numeric"
+    return reading.kind === "numeric" || reading.kind === "identifier"
       ? sample.digitIndex !== null && reading.value[sample.digitIndex] === sample.value
       : reading.value === sample.value;
   }
@@ -1080,32 +1256,56 @@ function buildReadingPayload(
     markerConfidence: number;
     averageConfidence: number;
   },
+  identifier?: {
+    reading: OmrIdentifierReading | null;
+    resolution: MatriculaResolution | null;
+    manuallyResolved: boolean;
+  },
 ): Json {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     modeloId: meta.modeloId,
     pagina: meta.pagina,
     limiar: round(meta.threshold),
     confiancaMarcadores: round(meta.markerConfidence),
     confiancaMedia: round(meta.averageConfidence),
-    respostas: readings.map((reading) => ({
-      questaoId: reading.questionId,
-      numero: reading.questionNumber,
-      tipo: reading.kind,
-      valor: reading.value,
-      status: reading.status,
-      motivoRevisao: reading.reviewReason,
-      valoresDetectados: reading.detectedValues,
-      confianca: round(reading.confidence),
-      requerRevisao: reading.requiresReview,
-      escores: reading.samples.map((sample) => ({
-        valor: sample.value,
-        ordem: sample.digitIndex,
-        escore: round(sample.score),
-        x: Math.round(sample.imageX),
-        y: Math.round(sample.imageY),
-        raio: Math.round(sample.imageRadius),
-      })),
+    respostas: readings.map(serializeReading),
+    identificacao: identifier
+      ? {
+          leitura: identifier.reading ? serializeReading(identifier.reading) : null,
+          resolucao: identifier.resolution
+            ? {
+                status: identifier.resolution.status,
+                valor: identifier.resolution.value,
+                alunoId: identifier.resolution.studentId,
+                alunoNome: identifier.resolution.studentName,
+                alunosCorrespondentes: identifier.resolution.matchingStudentIds,
+              }
+            : null,
+          resolvidaManualmente: identifier.manuallyResolved,
+        }
+      : null,
+  };
+}
+
+function serializeReading(reading: OmrQuestionReading | OmrIdentifierReading) {
+  return {
+    questaoId: reading.questionId,
+    numero: reading.questionNumber,
+    tipo: reading.kind,
+    valor: reading.value,
+    status: reading.status,
+    motivoRevisao: reading.reviewReason,
+    valoresDetectados: reading.detectedValues,
+    confianca: round(reading.confidence),
+    requerRevisao: reading.requiresReview,
+    escores: reading.samples.map((sample) => ({
+      valor: sample.value,
+      ordem: sample.digitIndex,
+      escore: round(sample.score),
+      x: Math.round(sample.imageX),
+      y: Math.round(sample.imageY),
+      raio: Math.round(sample.imageRadius),
     })),
   };
 }
@@ -1167,6 +1367,83 @@ function restoreSavedReadings(value: Json | null): OmrQuestionReading[] {
   });
 }
 
+function restoreSavedIdentifier(value: Json | null): {
+  reading: OmrIdentifierReading | null;
+  resolution: MatriculaResolution | null;
+  manuallyResolved: boolean;
+} {
+  const payload = asRecord(value);
+  const identification = asRecord(payload?.identificacao);
+  const savedReading = asRecord(identification?.leitura);
+  const savedResolution = asRecord(identification?.resolucao);
+  let reading: OmrIdentifierReading | null = null;
+
+  if (savedReading && isReadingStatus(savedReading.status)) {
+    const scores = Array.isArray(savedReading.escores) ? savedReading.escores : [];
+    const samples: OmrIdentifierReading["samples"] = scores.flatMap((score) => {
+      const item = asRecord(score);
+      if (!item || typeof item.valor !== "string") return [];
+      return [
+        {
+          questionId: "__matricula__",
+          questionNumber: 0,
+          kind: "identifier",
+          value: item.valor,
+          digitIndex: item.ordem === null || item.ordem === undefined ? null : Number(item.ordem),
+          x: 0,
+          y: 0,
+          radiusX: 0,
+          radiusY: 0,
+          imageX: Number.isFinite(Number(item.x)) ? Number(item.x) : 0,
+          imageY: Number.isFinite(Number(item.y)) ? Number(item.y) : 0,
+          imageRadius: Number.isFinite(Number(item.raio)) ? Number(item.raio) : 0,
+          score: Number.isFinite(Number(item.escore)) ? Number(item.escore) : 0,
+        },
+      ];
+    });
+    reading = {
+      questionId: "__matricula__",
+      questionNumber: 0,
+      kind: "identifier",
+      value: typeof savedReading.valor === "string" ? savedReading.valor : null,
+      status: savedReading.status,
+      reviewReason: isReviewReason(savedReading.motivoRevisao) ? savedReading.motivoRevisao : null,
+      detectedValues: Array.isArray(savedReading.valoresDetectados)
+        ? savedReading.valoresDetectados.filter((item): item is string => typeof item === "string")
+        : [],
+      confidence: Number.isFinite(Number(savedReading.confianca))
+        ? Number(savedReading.confianca)
+        : 0,
+      requiresReview: savedReading.requerRevisao === true,
+      samples,
+    };
+  }
+
+  const resolutionStatus = isMatriculaResolutionStatus(savedResolution?.status)
+    ? savedResolution.status
+    : null;
+  const resolution: MatriculaResolution | null = resolutionStatus
+    ? {
+        status: resolutionStatus,
+        value: typeof savedResolution?.valor === "string" ? savedResolution.valor : null,
+        studentId: typeof savedResolution?.alunoId === "string" ? savedResolution.alunoId : null,
+        studentName:
+          typeof savedResolution?.alunoNome === "string" ? savedResolution.alunoNome : null,
+        matchingStudentIds: Array.isArray(savedResolution?.alunosCorrespondentes)
+          ? savedResolution.alunosCorrespondentes.filter(
+              (item): item is string => typeof item === "string",
+            )
+          : [],
+      }
+    : null;
+
+  return {
+    reading,
+    resolution,
+    manuallyResolved: identification?.resolvidaManualmente === true,
+  };
+}
+
 function inferSavedReviewReason(
   status: OmrQuestionReading["status"],
   kind: OmrQuestionReading["kind"],
@@ -1212,6 +1489,16 @@ function isReadingStatus(value: unknown): value is OmrQuestionReading["status"] 
 
 function isReviewReason(value: unknown): value is OmrReviewReason {
   return value === "multiple" || value === "weak" || value === "incomplete";
+}
+
+function isMatriculaResolutionStatus(value: unknown): value is MatriculaResolution["status"] {
+  return (
+    value === "not_present" ||
+    value === "blank" ||
+    value === "linked" ||
+    value === "not_found" ||
+    value === "inconsistent"
+  );
 }
 
 function getErrorMessage(error: unknown, fallback: string) {

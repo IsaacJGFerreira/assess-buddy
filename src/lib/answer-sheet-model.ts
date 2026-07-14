@@ -1,10 +1,19 @@
 import type { AnswerSheetLayout } from "@/lib/answer-sheet-layout";
+import {
+  clampIdentifierDigits,
+  DEFAULT_IDENTIFIER_DIGITS,
+  type AnswerSheetIdentificationMode,
+} from "@/lib/answer-sheet-identification";
 import type { Avaliacao, ModeloFolhaResposta, Questao, TipoQuestao } from "@/lib/domain";
 
 export interface RestoredAnswerSheetModel {
   avaliacao: Avaliacao;
   questoes: Questao[];
   layout: AnswerSheetLayout;
+  identification: {
+    mode: AnswerSheetIdentificationMode;
+    digits: number;
+  };
 }
 
 export function restoreAnswerSheetModel(
@@ -13,6 +22,7 @@ export function restoreAnswerSheetModel(
 ): RestoredAnswerSheetModel {
   const snapshot = asRecord(model.snapshot);
   const assessmentSnapshot = asRecord(snapshot?.avaliacao);
+  const identificationSnapshot = asRecord(snapshot?.identificacao);
   const questionSnapshots = Array.isArray(snapshot?.questoes) ? snapshot.questoes : null;
   if (!snapshot || !assessmentSnapshot || !questionSnapshots) {
     throw new Error(`O snapshot da versão ${model.versao} está incompleto.`);
@@ -64,6 +74,16 @@ export function restoreAnswerSheetModel(
       rowsPerColumn: model.linhas_por_coluna,
       orientation: model.orientacao,
     },
+    identification: {
+      mode: isIdentificationMode(identificationSnapshot?.modo)
+        ? identificationSnapshot.modo
+        : "none",
+      digits: clampIdentifierDigits(
+        Number.isFinite(Number(identificationSnapshot?.digitos))
+          ? Number(identificationSnapshot?.digitos)
+          : DEFAULT_IDENTIFIER_DIGITS,
+      ),
+    },
   };
 }
 
@@ -75,6 +95,10 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function isQuestionType(value: unknown): value is TipoQuestao {
   return value === "mc" || value === "ce" || value === "num";
+}
+
+function isIdentificationMode(value: unknown): value is AnswerSheetIdentificationMode {
+  return value === "none" || value === "blank" || value === "prefilled";
 }
 
 function nullableNumber(value: unknown): number | null {

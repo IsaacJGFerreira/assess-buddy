@@ -1,15 +1,11 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import type { AnswerSheetLayout, AnswerSheetOrientation } from "@/lib/answer-sheet-layout";
+import type { AnswerSheetIdentificationMode } from "@/lib/answer-sheet-identification";
 
 export type TipoQuestao = "mc" | "ce" | "num";
 export type StatusAvaliacao =
-  | "elaboracao"
-  | "pronta"
-  | "aplicada"
-  | "em_correcao"
-  | "corrigida"
-  | "devolvida";
+  "elaboracao" | "pronta" | "aplicada" | "em_correcao" | "corrigida" | "devolvida";
 
 export const STATUS_LABEL: Record<StatusAvaliacao, string> = {
   elaboracao: "Em elaboração",
@@ -229,14 +225,22 @@ export async function createOrGetAnswerSheet({
   questoes,
   alunoId,
   layout,
+  identificationMode = "none",
+  identifierDigits = 6,
 }: {
   avaliacao: Avaliacao;
   questoes: Questao[];
   alunoId?: string;
   layout: AnswerSheetLayout;
+  identificationMode?: AnswerSheetIdentificationMode;
+  identifierDigits?: number;
 }): Promise<IdentificacaoFolhaResposta> {
   const snapshot: Json = {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    identificacao: {
+      modo: identificationMode,
+      digitos: identifierDigits,
+    },
     avaliacao: {
       id: avaliacao.id,
       titulo: avaliacao.titulo,
