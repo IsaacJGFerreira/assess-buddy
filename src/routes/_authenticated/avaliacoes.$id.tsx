@@ -138,6 +138,7 @@ function ConfigTab({ avaliacaoId }: { avaliacaoId: string }) {
     mc: "1",
     ce: "1",
     num: "1",
+    disc: "1",
   });
   const { data: questoes = [] } = useQuery({
     queryKey: ["questoes", avaliacaoId],
@@ -274,6 +275,7 @@ function ConfigTab({ avaliacaoId }: { avaliacaoId: string }) {
     { tipo: "mc", titulo: "Múltipla escolha", detalhe: "5 alternativas", variant: "default" },
     { tipo: "ce", titulo: "Certo/Errado", detalhe: "Opções C e E", variant: "secondary" },
     { tipo: "num", titulo: "Numérica", detalhe: "3 dígitos", variant: "secondary" },
+    { tipo: "disc", titulo: "Discursiva", detalhe: "Correção manual", variant: "secondary" },
   ];
 
   return (
@@ -367,6 +369,9 @@ function ConfigTab({ avaliacaoId }: { avaliacaoId: string }) {
                     </Select>
                   )}
                   {q.tipo === "ce" && <span className="text-muted-foreground">C ou E</span>}
+                  {q.tipo === "disc" && (
+                    <span className="text-muted-foreground">Correção manual</span>
+                  )}
                   {q.tipo === "num" && (
                     <Select
                       value={String(q.num_digitos ?? 3)}
@@ -529,6 +534,9 @@ function formatDecimal(value: number): string {
 }
 
 function GabaritoInput({ q, onChange }: { q: Questao; onChange: (v: string) => void }) {
+  if (q.tipo === "disc") {
+    return <span className="text-xs text-muted-foreground">Manual</span>;
+  }
   if (q.tipo === "mc") {
     const opts = alternativas(q);
     return (
@@ -1354,6 +1362,13 @@ function RespostaInput({
   // Sync when active question/aluno changes
   if (v !== value && document.activeElement?.tagName !== "INPUT") {
     // best-effort sync outside focus
+  }
+  if (q.tipo === "disc") {
+    return (
+      <span className="text-xs text-muted-foreground">
+        Correção manual (fora do gabarito automático)
+      </span>
+    );
   }
   if (q.tipo === "num") {
     const digits = q.num_digitos ?? 3;

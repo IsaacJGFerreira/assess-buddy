@@ -94,7 +94,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function isQuestionType(value: unknown): value is TipoQuestao {
-  return value === "mc" || value === "ce" || value === "num";
+  return value === "mc" || value === "ce" || value === "num" || value === "disc";
 }
 
 function isIdentificationMode(value: unknown): value is AnswerSheetIdentificationMode {

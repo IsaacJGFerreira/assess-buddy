@@ -970,6 +970,13 @@ function ReadingAnswerControl({
   spacious?: boolean;
 }) {
   const needsReview = reading.requiresReview;
+  if (question.tipo === "disc") {
+    return (
+      <span className="text-xs text-muted-foreground">
+        Discursiva — correção manual, sem leitura automática.
+      </span>
+    );
+  }
   if (question.tipo === "num") {
     return (
       <div className="flex flex-wrap items-center gap-2">

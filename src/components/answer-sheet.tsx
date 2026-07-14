@@ -157,6 +157,8 @@ function QuestionRow({
       <strong className="answer-sheet-question-number">{question.numero}</strong>
       {question.anulada ? (
         <span className="answer-sheet-question-note">Anulada</span>
+      ) : question.tipo === "disc" ? (
+        <span className="answer-sheet-question-note">Discursiva</span>
       ) : question.tipo === "num" ? (
         <span className="answer-sheet-question-note">Numérica →</span>
       ) : (

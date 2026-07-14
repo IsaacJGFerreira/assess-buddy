@@ -1,0 +1,1 @@
+ALTER TYPE public.tipo_questao ADD VALUE IF NOT EXISTS 'disc';

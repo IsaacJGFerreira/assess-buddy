@@ -3,7 +3,7 @@ import type { Json } from "@/integrations/supabase/types";
 import type { AnswerSheetLayout, AnswerSheetOrientation } from "@/lib/answer-sheet-layout";
 import type { AnswerSheetIdentificationMode } from "@/lib/answer-sheet-identification";
 
-export type TipoQuestao = "mc" | "ce" | "num";
+export type TipoQuestao = "mc" | "ce" | "num" | "disc";
 export type StatusAvaliacao =
   "elaboracao" | "pronta" | "aplicada" | "em_correcao" | "corrigida" | "devolvida";
 
@@ -20,6 +20,7 @@ export const TIPO_LABEL: Record<TipoQuestao, string> = {
   mc: "Múltipla escolha",
   ce: "Certo/Errado",
   num: "Numérica",
+  disc: "Discursiva",
 };
 
 export interface Turma {
@@ -300,7 +301,7 @@ export async function createOrGetAnswerSheet({
   };
   const { data, error } = await supabase.rpc("criar_ou_obter_folha_respostas", {
     p_avaliacao_id: avaliacao.id,
-    p_aluno_id: alunoId ?? null,
+    p_aluno_id: (alunoId ?? null) as unknown as string,
     p_colunas: layout.columns,
     p_linhas_por_coluna: layout.rowsPerColumn,
     p_orientacao: layout.orientation,
@@ -475,6 +476,7 @@ export function corrigirQuestao(
   resposta: string | null | undefined,
 ): { situacao: Situacao; pontos: number } {
   if (q.anulada) return { situacao: "anulada", pontos: Number(q.valor) };
+  if (q.tipo === "disc") return { situacao: "branco", pontos: 0 };
   const r = (resposta ?? "").trim();
   if (!r) return { situacao: "branco", pontos: 0 };
   const gab = (q.gabarito ?? "").trim().toUpperCase();
