@@ -1170,27 +1170,27 @@ function EmbeddedAnswerSheetPreview({
             type="button"
             variant="outline"
             onClick={() => void exportFile("png")}
-            disabled={exporting !== null || questoes.length === 0 || !identification}
+            disabled={exporting !== null || questoes.length === 0 || (!isBatchable && !identification)}
           >
             {exporting === "png" ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <FileImage className="mr-2 h-4 w-4" />
             )}
-            Baixar PNG
+            {isBatchable ? `Baixar PNGs da turma (.zip)` : "Baixar PNG"}
           </Button>
           <Button
             type="button"
             variant="outline"
             onClick={() => void exportFile("pdf")}
-            disabled={exporting !== null || questoes.length === 0 || !identification}
+            disabled={exporting !== null || questoes.length === 0 || (!isBatchable && !identification)}
           >
             {exporting === "pdf" ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <Download className="mr-2 h-4 w-4" />
             )}
-            Baixar PDF
+            {isBatchable ? `Baixar PDFs da turma (.zip)` : "Baixar PDF"}
           </Button>
           <Button
             type="button"
@@ -1202,6 +1202,12 @@ function EmbeddedAnswerSheetPreview({
           </Button>
         </div>
       </div>
+
+      {batchProgress && (
+        <div className="no-print border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
+          Gerando pacote… {batchProgress.done}/{batchProgress.total} alunos
+        </div>
+      )}
 
       {persistenceUnavailable && (
         <div className="no-print flex gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
