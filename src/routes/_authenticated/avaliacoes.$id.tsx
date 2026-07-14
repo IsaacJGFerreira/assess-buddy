@@ -159,7 +159,6 @@ function ConfigTab({ avaliacaoId }: { avaliacaoId: string }) {
         numero: primeiroNumero + index,
         tipo,
         valor: 1,
-        desconto_erro: 0,
         anulada: false,
         qtd_alternativas: tipo === "mc" ? 5 : tipo === "ce" ? 2 : null,
         num_digitos: tipo === "num" ? 3 : null,
