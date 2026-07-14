@@ -447,19 +447,12 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
     DEFAULT_ANSWER_SHEET_LAYOUT.rowsPerColumn,
   );
   const [preview, setPreview] = useState<{
-    alunoId?: string;
     identification: IdentificacaoFolhaResposta | null;
     persistenceUnavailable?: boolean;
   } | null>(null);
-  const turmaId = avaliacao.turma_id;
   const savedModel = useQuery({
     queryKey: ["modelo-folha", avaliacao.id],
     queryFn: () => getLatestAnswerSheetModel(avaliacao.id),
-  });
-  const alunos = useQuery({
-    queryKey: ["alunos", turmaId ?? ""],
-    queryFn: () => (turmaId ? listAlunosByTurma(turmaId) : Promise.resolve([])),
-    enabled: !!turmaId,
   });
   const orientation =
     orientationOverride ?? savedModel.data?.orientacao ?? DEFAULT_ANSWER_SHEET_LAYOUT.orientation;
@@ -480,26 +473,21 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
     rowsPerColumn: sheetSearch.linhas,
     orientation: sheetSearch.orientacao,
   };
-  const previewAluno = preview?.alunoId
-    ? alunos.data?.find((aluno) => aluno.id === preview.alunoId)
-    : null;
   const generateSheet = useMutation({
-    mutationFn: ({ alunoId }: { alunoId?: string }) =>
+    mutationFn: () =>
       createOrGetAnswerSheet({
         avaliacao,
         questoes,
-        alunoId,
         layout,
       }),
-    onSuccess: (identification, variables) => {
+    onSuccess: (identification) => {
       void queryClient.invalidateQueries({ queryKey: ["modelo-folha", avaliacao.id] });
-      setPreview({ alunoId: variables.alunoId, identification });
+      setPreview({ identification });
       toast.success(`Folha ${identification.codigo} · versão ${identification.versao}.`);
     },
-    onError: (error: Error, variables) => {
+    onError: (error: Error) => {
       if (isAnswerSheetPersistenceUnavailable(error)) {
         setPreview({
-          alunoId: variables.alunoId,
           identification: null,
           persistenceUnavailable: true,
         });
@@ -529,7 +517,6 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
       <EmbeddedAnswerSheetPreview
         avaliacao={avaliacao}
         questoes={questoes}
-        aluno={previewAluno}
         layout={layout}
         identification={preview.identification}
         persistenceUnavailable={preview.persistenceUnavailable}
@@ -585,7 +572,7 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
 
             <div className="mt-4 space-y-4">
               <fieldset className="space-y-2">
-                <legend className="text-sm font-medium">Orientação</legend>
+                <legend className="text-sm font-medium">Distribuição</legend>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -594,7 +581,7 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
                     aria-pressed={orientation === "portrait"}
                   >
                     <RectangleVertical className="h-6 w-6" />
-                    A4 retrato
+                    Vertical
                   </button>
                   <button
                     type="button"
@@ -603,7 +590,7 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
                     aria-pressed={orientation === "landscape"}
                   >
                     <RectangleHorizontal className="h-6 w-6" />
-                    A4 paisagem
+                    Horizontal
                   </button>
                 </div>
               </fieldset>
@@ -628,7 +615,7 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="sheet-rows">Linhas por coluna</Label>
+                <Label htmlFor="sheet-rows">Máximo de itens por coluna</Label>
                 <Input
                   id="sheet-rows"
                   type="number"
@@ -643,7 +630,8 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
                   }}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Máximo de {orientation === "landscape" ? 25 : 35} linhas nesta orientação.
+                  O bloco usa somente as linhas necessárias, até o máximo de{" "}
+                  {orientation === "landscape" ? 25 : 35} por coluna.
                 </p>
               </div>
             </div>
@@ -658,13 +646,13 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
                   : "Primeira versão da folha"}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              A folha será salva em A4 {orientation === "portrait" ? "retrato" : "paisagem"}, com
-              capacidade para {sheetSearch.colunas * rowsPerColumn} questões por página.
+              O bloco será salvo no menor tamanho possível, com limite de{" "}
+              {sheetSearch.colunas * rowsPerColumn} questões antes de criar outro bloco.
             </p>
             <Button
               type="button"
               className="mt-4 w-full"
-              onClick={() => generateSheet.mutate({})}
+              onClick={() => generateSheet.mutate()}
               disabled={generateSheet.isPending || savedModel.isLoading || questoes.length === 0}
             >
               {generateSheet.isPending ? (
@@ -677,28 +665,6 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
           </div>
         </aside>
       </div>
-      {turmaId && (alunos.data?.length ?? 0) > 0 && (
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h3 className="font-semibold mb-3">Folhas personalizadas por aluno</h3>
-          <div className="grid gap-2 md:grid-cols-2">
-            {alunos.data!.map((a) => (
-              <button
-                key={a.id}
-                type="button"
-                onClick={() => generateSheet.mutate({ alunoId: a.id })}
-                disabled={generateSheet.isPending || savedModel.isLoading || questoes.length === 0}
-                className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <span>
-                  {a.chamada ? `${a.chamada}. ` : ""}
-                  {a.nome}
-                </span>
-                <Printer className="h-4 w-4 text-muted-foreground" />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -734,7 +700,6 @@ function EmbeddedAnswerSheetPreview({
         await exportAnswerSheetAsPdf(
           exportRootRef.current,
           `${avaliacao.titulo}-${identification.codigo}`,
-          layout.orientation,
         );
       } else {
         await exportAnswerSheetAsPng(
@@ -768,7 +733,7 @@ function EmbeddedAnswerSheetPreview({
 
   return (
     <div className="answer-sheet-inline-preview overflow-hidden rounded-lg border border-border bg-muted/30">
-      <style>{`@media print { @page { size: A4 ${layout.orientation}; margin: 0; } }`}</style>
+      <style>{`@media print { @page { size: auto; margin: 0; } }`}</style>
 
       <div className="no-print flex flex-wrap items-center justify-between gap-3 border-b border-border bg-card p-4">
         <div className="flex items-center gap-3">
@@ -779,8 +744,8 @@ function EmbeddedAnswerSheetPreview({
           <div>
             <div className="font-medium">{aluno ? `Folha de ${aluno.nome}` : "Folha genérica"}</div>
             <div className="text-xs text-muted-foreground">
-              {layout.columns} coluna{layout.columns > 1 ? "s" : ""} · {layout.rowsPerColumn} linhas
-              · A4 {layout.orientation === "landscape" ? "paisagem" : "retrato"}
+              {layout.columns} coluna{layout.columns > 1 ? "s" : ""} · até {layout.rowsPerColumn}{" "}
+              itens por coluna · formato compacto
             </div>
             {identification ? (
               <div className="mt-1 font-mono text-xs text-muted-foreground">
