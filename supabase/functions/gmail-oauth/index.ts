@@ -101,11 +101,12 @@ async function finishAuthorization(request: Request): Promise<Response> {
 
   const database = serviceClient();
   const stateHash = await hashState(rawState);
-  const { data: state, error: stateError } = await database
+  const { data: stateData, error: stateError } = await database
     .from("gmail_oauth_states")
     .select("state_hash,user_id,expected_email,return_url,expires_at")
     .eq("state_hash", stateHash)
-    .maybeSingle<OAuthStateRow>();
+    .maybeSingle();
+  const state = stateData as OAuthStateRow | null;
 
   if (stateError || !state) return new Response("Autorização inválida ou expirada.", { status: 400 });
   await database.from("gmail_oauth_states").delete().eq("state_hash", stateHash);
@@ -153,23 +154,25 @@ async function finishAuthorization(request: Request): Promise<Response> {
     return Response.redirect(addQuery(state.return_url, { gmail: "error", gmail_reason: "email_mismatch" }), 302);
   }
 
-  const { data: current } = await database
+  const { data: currentData } = await database
     .from("gmail_connections")
     .select("refresh_token_ciphertext,refresh_token_iv")
     .eq("user_id", state.user_id)
     .maybeSingle();
+  const current = currentData as { refresh_token_ciphertext?: string; refresh_token_iv?: string } | null;
 
-  let encrypted: { ciphertext: string; iv: string } | null = null;
-  if (tokens.refresh_token) encrypted = await encryptRefreshToken(tokens.refresh_token);
-  if (!encrypted && !current?.refresh_token_ciphertext) {
+  const encrypted = tokens.refresh_token ? await encryptRefreshToken(tokens.refresh_token) : null;
+  const ciphertext = encrypted?.ciphertext ?? current?.refresh_token_ciphertext;
+  const iv = encrypted?.iv ?? current?.refresh_token_iv;
+  if (!ciphertext || !iv) {
     return Response.redirect(addQuery(state.return_url, { gmail: "error", gmail_reason: "missing_refresh_token" }), 302);
   }
 
   const { error: saveError } = await database.from("gmail_connections").upsert({
     user_id: state.user_id,
     google_email: connectedEmail,
-    refresh_token_ciphertext: encrypted?.ciphertext ?? current.refresh_token_ciphertext,
-    refresh_token_iv: encrypted?.iv ?? current.refresh_token_iv,
+    refresh_token_ciphertext: ciphertext,
+    refresh_token_iv: iv,
     scopes: tokens.scope ?? "openid email https://www.googleapis.com/auth/gmail.send",
     updated_at: new Date().toISOString(),
   });
