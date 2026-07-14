@@ -107,10 +107,11 @@ export type Database = {
       }
       digitalizacoes_folhas: {
         Row: {
+          altura_px: number
           aluno_id: string | null
           arquivo_original: string
-          altura_px: number
           avaliacao_id: string
+          confianca_leitura: number | null
           created_at: string
           folha_id: string | null
           id: string
@@ -118,8 +119,8 @@ export type Database = {
           mime_original: string
           modelo_id: string | null
           owner_id: string
-          pagina_origem: number
           pagina_modelo: number | null
+          pagina_origem: number
           processado_at: string | null
           recorte: Json
           resultado_leitura: Json | null
@@ -127,14 +128,14 @@ export type Database = {
           status: string
           storage_path: string
           tamanho_bytes: number
-          confianca_leitura: number | null
           updated_at: string
         }
         Insert: {
+          altura_px: number
           aluno_id?: string | null
           arquivo_original: string
-          altura_px: number
           avaliacao_id: string
+          confianca_leitura?: number | null
           created_at?: string
           folha_id?: string | null
           id?: string
@@ -142,8 +143,8 @@ export type Database = {
           mime_original: string
           modelo_id?: string | null
           owner_id: string
-          pagina_origem?: number
           pagina_modelo?: number | null
+          pagina_origem?: number
           processado_at?: string | null
           recorte: Json
           resultado_leitura?: Json | null
@@ -151,14 +152,14 @@ export type Database = {
           status?: string
           storage_path: string
           tamanho_bytes: number
-          confianca_leitura?: number | null
           updated_at?: string
         }
         Update: {
+          altura_px?: number
           aluno_id?: string | null
           arquivo_original?: string
-          altura_px?: number
           avaliacao_id?: string
+          confianca_leitura?: number | null
           created_at?: string
           folha_id?: string | null
           id?: string
@@ -166,8 +167,8 @@ export type Database = {
           mime_original?: string
           modelo_id?: string | null
           owner_id?: string
-          pagina_origem?: number
           pagina_modelo?: number | null
+          pagina_origem?: number
           processado_at?: string | null
           recorte?: Json
           resultado_leitura?: Json | null
@@ -175,7 +176,6 @@ export type Database = {
           status?: string
           storage_path?: string
           tamanho_bytes?: number
-          confianca_leitura?: number | null
           updated_at?: string
         }
         Relationships: [
@@ -218,7 +218,7 @@ export type Database = {
           id: string
           modelo_id: string
           owner_id: string
-          qr_payload: string
+          qr_payload: string | null
         }
         Insert: {
           aluno_id?: string | null
@@ -228,7 +228,7 @@ export type Database = {
           id?: string
           modelo_id: string
           owner_id: string
-          qr_payload?: never
+          qr_payload?: string | null
         }
         Update: {
           aluno_id?: string | null
@@ -238,7 +238,7 @@ export type Database = {
           id?: string
           modelo_id?: string
           owner_id?: string
-          qr_payload?: never
+          qr_payload?: string | null
         }
         Relationships: [
           {
@@ -338,7 +338,6 @@ export type Database = {
           avaliacao_id: string
           conteudo: string | null
           created_at: string
-          desconto_erro: number
           gabarito: string | null
           id: string
           num_digitos: number | null
@@ -354,7 +353,6 @@ export type Database = {
           avaliacao_id: string
           conteudo?: string | null
           created_at?: string
-          desconto_erro?: number
           gabarito?: string | null
           id?: string
           num_digitos?: number | null
@@ -370,7 +368,6 @@ export type Database = {
           avaliacao_id?: string
           conteudo?: string | null
           created_at?: string
-          desconto_erro?: number
           gabarito?: string | null
           id?: string
           num_digitos?: number | null
@@ -493,7 +490,7 @@ export type Database = {
       }
       criar_ou_obter_folha_respostas: {
         Args: {
-          p_aluno_id: string | null
+          p_aluno_id: string
           p_avaliacao_id: string
           p_colunas: number
           p_linhas_por_coluna: number
@@ -507,13 +504,6 @@ export type Database = {
           qr_payload: string
           versao: number
         }[]
-      }
-      mover_questao: {
-        Args: {
-          p_nova_posicao: number
-          p_questao_id: string
-        }
-        Returns: undefined
       }
     }
     Enums: {
