@@ -738,6 +738,7 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
         identificationMode,
         identifierDigits,
         aluno: identificationMode === "prefilled" ? selectedStudent : null,
+        eligibleStudents,
       });
       toast.success(`Folha ${identification.codigo} · versão ${identification.versao}.`);
     },
@@ -748,6 +749,7 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
           identificationMode,
           identifierDigits,
           aluno: identificationMode === "prefilled" ? selectedStudent : null,
+          eligibleStudents,
           persistenceUnavailable: true,
         });
         toast.warning("Prévia aberta. O banco ainda precisa receber a atualização das folhas.");
