@@ -495,7 +495,6 @@ export function AnswerSheetMarkReader({
               <SelectItem value="__unlinked__">Sem aluno vinculado</SelectItem>
               {alunos.map((student) => (
                 <SelectItem key={student.id} value={student.id}>
-                  {student.chamada ? `${student.chamada}. ` : ""}
                   {student.nome}
                 </SelectItem>
               ))}

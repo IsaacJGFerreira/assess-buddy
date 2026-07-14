@@ -46,7 +46,7 @@ function DevolutivaPrint() {
           <div>
             <div className="text-xs uppercase tracking-widest text-neutral-600">Correção da avaliação</div>
             <h1 className="text-xl font-bold mt-1">{av.data.titulo}</h1>
-            <div className="text-sm mt-1">Aluno: <strong>{aluno.data.nome}</strong>{aluno.data.chamada ? ` · nº ${aluno.data.chamada}` : ""}</div>
+            <div className="text-sm mt-1">Aluno: <strong>{aluno.data.nome}</strong></div>
           </div>
           <div className="text-right">
             <div className="text-xs uppercase text-neutral-500">Nota</div>
