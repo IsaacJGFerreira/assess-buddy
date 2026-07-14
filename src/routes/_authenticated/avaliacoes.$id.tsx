@@ -63,10 +63,15 @@ import {
   type AnswerSheetOrientation,
 } from "@/lib/answer-sheet-layout";
 import {
+  clampIdentifierDigits,
   determineIdentifierDigits,
+  DEFAULT_IDENTIFIER_DIGITS,
+  MAX_IDENTIFIER_DIGITS,
+  MIN_IDENTIFIER_DIGITS,
   isStudentEligibleForPrefilledSheet,
   type AnswerSheetIdentificationMode,
 } from "@/lib/answer-sheet-identification";
+import { batchExportAnswerSheetsAsZip } from "@/lib/answer-sheet-batch";
 
 export const Route = createFileRoute("/_authenticated/avaliacoes/$id")({
   component: AvaliacaoDetail,
