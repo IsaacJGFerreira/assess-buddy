@@ -783,6 +783,7 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
         identificationMode={preview.identificationMode}
         identifierDigits={preview.identifierDigits}
         aluno={preview.aluno}
+        eligibleStudents={preview.eligibleStudents}
         persistenceUnavailable={preview.persistenceUnavailable}
         onBack={() => setPreview(null)}
       />
