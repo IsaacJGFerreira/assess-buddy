@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedTurmasRouteImport } from './routes/_authenticated/turmas'
 import { Route as AuthenticatedPainelRouteImport } from './routes/_authenticated/painel'
+import { Route as AuthenticatedDevolutivaIdAlunoIdRouteImport } from './routes/_authenticated/devolutiva.$id.$alunoId'
 import { Route as AuthenticatedAvaliacoesNovaRouteImport } from './routes/_authenticated/avaliacoes.nova'
 import { Route as AuthenticatedAvaliacoesIdRouteImport } from './routes/_authenticated/avaliacoes.$id'
 import { Route as AuthenticatedAvaliacoesIdFolhaRouteImport } from './routes/_authenticated/avaliacoes.$id.folha'
@@ -43,6 +44,12 @@ const AuthenticatedPainelRoute = AuthenticatedPainelRouteImport.update({
   path: '/painel',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedDevolutivaIdAlunoIdRoute =
+  AuthenticatedDevolutivaIdAlunoIdRouteImport.update({
+    id: '/devolutiva/$id/$alunoId',
+    path: '/devolutiva/$id/$alunoId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAvaliacoesNovaRoute =
   AuthenticatedAvaliacoesNovaRouteImport.update({
     id: '/avaliacoes/nova',
@@ -73,6 +80,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/painel': typeof AuthenticatedPainelRoute
   '/turmas': typeof AuthenticatedTurmasRoute
+  '/devolutiva/$id/$alunoId': typeof AuthenticatedDevolutivaIdAlunoIdRoute
   '/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRouteWithChildren
   '/avaliacoes/nova': typeof AuthenticatedAvaliacoesNovaRoute
   '/avaliacoes/$id/folha': typeof AuthenticatedAvaliacoesIdFolhaRoute
@@ -83,6 +91,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/painel': typeof AuthenticatedPainelRoute
   '/turmas': typeof AuthenticatedTurmasRoute
+  '/devolutiva/$id/$alunoId': typeof AuthenticatedDevolutivaIdAlunoIdRoute
   '/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRouteWithChildren
   '/avaliacoes/nova': typeof AuthenticatedAvaliacoesNovaRoute
   '/avaliacoes/$id/folha': typeof AuthenticatedAvaliacoesIdFolhaRoute
@@ -95,6 +104,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/_authenticated/painel': typeof AuthenticatedPainelRoute
   '/_authenticated/turmas': typeof AuthenticatedTurmasRoute
+  '/_authenticated/devolutiva/$id/$alunoId': typeof AuthenticatedDevolutivaIdAlunoIdRoute
   '/_authenticated/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRouteWithChildren
   '/_authenticated/avaliacoes/nova': typeof AuthenticatedAvaliacoesNovaRoute
   '/_authenticated/avaliacoes/$id/folha': typeof AuthenticatedAvaliacoesIdFolhaRoute
@@ -107,6 +117,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/painel'
     | '/turmas'
+    | '/devolutiva/$id/$alunoId'
     | '/avaliacoes/$id'
     | '/avaliacoes/nova'
     | '/avaliacoes/$id/folha'
@@ -117,6 +128,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/painel'
     | '/turmas'
+    | '/devolutiva/$id/$alunoId'
     | '/avaliacoes/$id'
     | '/avaliacoes/nova'
     | '/avaliacoes/$id/folha'
@@ -128,6 +140,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/_authenticated/painel'
     | '/_authenticated/turmas'
+    | '/_authenticated/devolutiva/$id/$alunoId'
     | '/_authenticated/avaliacoes/$id'
     | '/_authenticated/avaliacoes/nova'
     | '/_authenticated/avaliacoes/$id/folha'
@@ -175,6 +188,13 @@ declare module '@tanstack/react-router' {
       path: '/painel'
       fullPath: '/painel'
       preLoaderRoute: typeof AuthenticatedPainelRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/devolutiva/$id/$alunoId': {
+      id: '/_authenticated/devolutiva/$id/$alunoId'
+      path: '/devolutiva/$id/$alunoId'
+      fullPath: '/devolutiva/$id/$alunoId'
+      preLoaderRoute: typeof AuthenticatedDevolutivaIdAlunoIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/avaliacoes/nova': {
@@ -228,6 +248,7 @@ const AuthenticatedAvaliacoesIdRouteWithChildren =
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedPainelRoute: typeof AuthenticatedPainelRoute
   AuthenticatedTurmasRoute: typeof AuthenticatedTurmasRoute
+  AuthenticatedDevolutivaIdAlunoIdRoute: typeof AuthenticatedDevolutivaIdAlunoIdRoute
   AuthenticatedAvaliacoesIdRoute: typeof AuthenticatedAvaliacoesIdRouteWithChildren
   AuthenticatedAvaliacoesNovaRoute: typeof AuthenticatedAvaliacoesNovaRoute
 }
@@ -235,6 +256,7 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedPainelRoute: AuthenticatedPainelRoute,
   AuthenticatedTurmasRoute: AuthenticatedTurmasRoute,
+  AuthenticatedDevolutivaIdAlunoIdRoute: AuthenticatedDevolutivaIdAlunoIdRoute,
   AuthenticatedAvaliacoesIdRoute: AuthenticatedAvaliacoesIdRouteWithChildren,
   AuthenticatedAvaliacoesNovaRoute: AuthenticatedAvaliacoesNovaRoute,
 }

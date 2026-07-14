@@ -1,6 +1,18 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, Download, Link2, Loader2, Mail, Save, Send } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  CheckCircle2,
+  Download,
+  ImagePlus,
+  Link2,
+  Loader2,
+  Mail,
+  Save,
+  Send,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,22 +34,44 @@ import {
   type GmailConnection,
 } from "@/lib/gmail-sender";
 
-type DiscursiveDraft = { score: string; feedback: string };
-type SendState = "sending" | "sent" | "missing" | "error";
-type SendStatus = { state: SendState; message?: string };
+const MODEL_IMAGE_BUCKET = "devolutivas-modelo";
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
-export function ClassFeedbackPanel({ turmaId }: { turmaId: string }) {
+type AssessmentRecord = FeedbackAssessment & { turma_id: string | null };
+type DiscursiveDraft = {
+  answer: string;
+  score: string;
+  feedback: string;
+  modelAnswer: string;
+  imagePath: string | null;
+  originalImagePath: string | null;
+};
+
+type ImageUrls = Record<string, string | null>;
+
+/**
+ * Mantido temporariamente para não quebrar a tela antiga de turmas.
+ * A devolutiva agora é aberta exclusivamente pelo Relatório da avaliação.
+ */
+export function ClassFeedbackPanel(_props: { turmaId: string }) {
+  return null;
+}
+
+export function StudentFeedbackEditor({
+  assessmentId,
+  studentId,
+}: {
+  assessmentId: string;
+  studentId: string;
+}) {
   const qc = useQueryClient();
-  const [assessmentId, setAssessmentId] = useState("");
-  const [studentId, setStudentId] = useState("");
-  const [generalComment, setGeneralComment] = useState("");
-  const [orientations, setOrientations] = useState<Record<string, string>>({});
-  const [discursive, setDiscursive] = useState<Record<string, DiscursiveDraft>>({});
+  const [drafts, setDrafts] = useState<Record<string, DiscursiveDraft>>({});
+  const [imageUrls, setImageUrls] = useState<ImageUrls>({});
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadingQuestionId, setUploadingQuestionId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [gmail, setGmail] = useState<GmailConnection | null>(null);
-  const [statuses, setStatuses] = useState<Record<string, SendStatus>>({});
 
   const userQuery = useQuery({
     queryKey: ["feedback-user"],
@@ -49,31 +83,26 @@ export function ClassFeedbackPanel({ turmaId }: { turmaId: string }) {
     },
   });
 
-  const assessmentsQuery = useQuery({
-    queryKey: ["feedback-assessments", turmaId],
+  const assessmentQuery = useQuery({
+    queryKey: ["feedback-assessment", assessmentId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("avaliacoes")
-        .select("*")
-        .eq("turma_id", turmaId)
-        .order("created_at", { ascending: false });
+      const { data, error } = await supabase.from("avaliacoes").select("*").eq("id", assessmentId).single();
       if (error) throw error;
-      return (data ?? []) as unknown as FeedbackAssessment[];
+      return data as unknown as AssessmentRecord;
     },
   });
 
-  const studentsQuery = useQuery({
-    queryKey: ["feedback-students", turmaId],
+  const studentQuery = useQuery({
+    queryKey: ["feedback-student", studentId],
     queryFn: async () => {
-      const { data, error } = await supabase.from("alunos").select("*").eq("turma_id", turmaId).order("nome");
+      const { data, error } = await supabase.from("alunos").select("*").eq("id", studentId).single();
       if (error) throw error;
-      return (data ?? []) as unknown as FeedbackStudent[];
+      return data as unknown as FeedbackStudent;
     },
   });
 
   const questionsQuery = useQuery({
     queryKey: ["feedback-questions", assessmentId],
-    enabled: Boolean(assessmentId),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("questoes")
@@ -86,127 +115,204 @@ export function ClassFeedbackPanel({ turmaId }: { turmaId: string }) {
   });
 
   const responsesQuery = useQuery({
-    queryKey: ["feedback-responses", assessmentId],
-    enabled: Boolean(assessmentId),
+    queryKey: ["feedback-responses", assessmentId, studentId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("respostas_alunos")
         .select("*")
-        .eq("avaliacao_id", assessmentId);
+        .eq("avaliacao_id", assessmentId)
+        .eq("aluno_id", studentId);
       if (error) throw error;
       return (data ?? []) as unknown as FeedbackResponse[];
     },
   });
 
-  const assessment = assessmentsQuery.data?.find((item) => item.id === assessmentId) ?? null;
-  const student = studentsQuery.data?.find((item) => item.id === studentId) ?? null;
+  const assessment = assessmentQuery.data ?? null;
+  const student = studentQuery.data ?? null;
   const questions = useMemo(() => questionsQuery.data ?? [], [questionsQuery.data]);
   const responses = useMemo(() => responsesQuery.data ?? [], [responsesQuery.data]);
-  const discursiveQuestions = useMemo(() => questions.filter((question) => question.tipo === "disc"), [questions]);
-  const studentResponses = useMemo(
-    () => responses.filter((response) => response.aluno_id === studentId),
-    [responses, studentId],
+  const discursiveQuestions = useMemo(
+    () => questions.filter((question) => question.tipo === "disc"),
+    [questions],
   );
   const score = useMemo(
-    () => calculateFeedbackScore(questions, mergeDrafts(studentResponses, studentId, discursive)),
-    [questions, studentResponses, studentId, discursive],
+    () => calculateFeedbackScore(questions, mergeDrafts(responses, studentId, drafts)),
+    [questions, responses, studentId, drafts],
   );
 
   useEffect(() => {
-    const first = assessmentsQuery.data?.[0]?.id ?? "";
-    if (!assessmentId || !assessmentsQuery.data?.some((item) => item.id === assessmentId)) setAssessmentId(first);
-  }, [assessmentId, assessmentsQuery.data]);
-
-  useEffect(() => {
-    const first = studentsQuery.data?.[0]?.id ?? "";
-    if (!studentId || !studentsQuery.data?.some((item) => item.id === studentId)) setStudentId(first);
-  }, [studentId, studentsQuery.data]);
-
-  useEffect(() => {
-    setGeneralComment(assessment?.comentario_devolutiva ?? "");
-    setOrientations(Object.fromEntries(questions.map((question) => [question.id, question.orientacao_correcao ?? ""])));
-    setDirty(false);
-  }, [assessment?.id, assessment?.comentario_devolutiva, questions]);
-
-  useEffect(() => {
-    const byQuestion = new Map(studentResponses.map((response) => [response.questao_id, response]));
-    setDiscursive(
+    const byQuestion = new Map(responses.map((response) => [response.questao_id, response]));
+    setDrafts(
       Object.fromEntries(
         discursiveQuestions.map((question) => {
           const response = byQuestion.get(question.id);
+          const imagePath = question.resposta_modelo_imagem_path ?? null;
           return [
             question.id,
             {
+              answer: response?.resposta ?? "",
               score: response?.nota_manual == null ? "" : String(response.nota_manual),
               feedback: response?.feedback ?? "",
+              modelAnswer: question.resposta_modelo ?? "",
+              imagePath,
+              originalImagePath: imagePath,
             },
           ];
         }),
       ),
     );
     setDirty(false);
-  }, [studentId, studentResponses, discursiveQuestions]);
+  }, [discursiveQuestions, responses]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSignedImages() {
+      const entries = await Promise.all(
+        discursiveQuestions.map(async (question) => {
+          const path = question.resposta_modelo_imagem_path;
+          if (!path) return [question.id, null] as const;
+          const { data, error } = await supabase.storage.from(MODEL_IMAGE_BUCKET).createSignedUrl(path, 3600);
+          if (error) return [question.id, null] as const;
+          return [question.id, data.signedUrl] as const;
+        }),
+      );
+      if (!cancelled) setImageUrls(Object.fromEntries(entries));
+    }
+    void loadSignedImages();
+    return () => {
+      cancelled = true;
+    };
+  }, [discursiveQuestions]);
 
   async function save(showToast = true) {
-    if (!assessment || !userQuery.data) return;
+    if (!assessment || !student || !userQuery.data) return;
     setSaving(true);
     try {
-      const { error: assessmentError } = await supabase
-        .from("avaliacoes")
-        .update({ comentario_devolutiva: generalComment.trim() || null } as never)
-        .eq("id", assessment.id);
-      if (assessmentError) throw assessmentError;
+      const existing = new Map(responses.map((response) => [response.questao_id, response]));
+      const obsoleteImages: string[] = [];
 
-      for (const question of questions) {
-        const { error } = await supabase
+      for (const question of discursiveQuestions) {
+        const draft = drafts[question.id] ?? emptyDraft();
+        const scoreValue = parseScore(draft.score, question.numero, Number(question.valor));
+        const { error: questionError } = await supabase
           .from("questoes")
-          .update({ orientacao_correcao: orientations[question.id]?.trim() || null } as never)
+          .update(
+            {
+              resposta_modelo: draft.modelAnswer.trim() || null,
+              resposta_modelo_imagem_path: draft.imagePath,
+            } as never,
+          )
           .eq("id", question.id);
-        if (error) throw error;
-      }
+        if (questionError) throw questionError;
 
-      if (student && discursiveQuestions.length) {
-        const existing = new Map(studentResponses.map((response) => [response.questao_id, response]));
-        const rows = discursiveQuestions.map((question) => {
-          const draft = discursive[question.id] ?? { score: "", feedback: "" };
-          const value = draft.score.trim() === "" ? null : Number(draft.score.replace(",", "."));
-          if (value != null && (!Number.isFinite(value) || value < 0 || value > Number(question.valor))) {
-            throw new Error(`A nota da questão ${question.numero} deve ficar entre 0 e ${formatNumber(question.valor)}.`);
-          }
-          return {
+        const { error: responseError } = await supabase.from("respostas_alunos").upsert(
+          {
             avaliacao_id: assessment.id,
             aluno_id: student.id,
             questao_id: question.id,
-            resposta: existing.get(question.id)?.resposta ?? null,
-            nota_manual: value,
+            resposta: draft.answer.trim() || null,
+            nota_manual: scoreValue,
             feedback: draft.feedback.trim() || null,
             owner_id: userQuery.data.id,
-          };
+          } as never,
+          { onConflict: "aluno_id,questao_id" },
+        );
+        if (responseError) throw responseError;
+
+        if (
+          draft.originalImagePath &&
+          draft.originalImagePath !== draft.imagePath &&
+          !obsoleteImages.includes(draft.originalImagePath)
+        ) {
+          obsoleteImages.push(draft.originalImagePath);
+        }
+
+        existing.set(question.id, {
+          aluno_id: student.id,
+          questao_id: question.id,
+          resposta: draft.answer.trim() || null,
+          nota_manual: scoreValue,
+          feedback: draft.feedback.trim() || null,
         });
-        const { error } = await supabase
-          .from("respostas_alunos")
-          .upsert(rows as never, { onConflict: "aluno_id,questao_id" });
-        if (error) throw error;
       }
 
+      if (obsoleteImages.length) {
+        const { error } = await supabase.storage.from(MODEL_IMAGE_BUCKET).remove(obsoleteImages);
+        if (error) toast.warning("Os dados foram salvos, mas uma imagem antiga não pôde ser removida.");
+      }
+
+      setDrafts((current) =>
+        Object.fromEntries(
+          Object.entries(current).map(([questionId, draft]) => [
+            questionId,
+            { ...draft, originalImagePath: draft.imagePath },
+          ]),
+        ),
+      );
       await Promise.all([
-        qc.invalidateQueries({ queryKey: ["feedback-assessments", turmaId] }),
-        qc.invalidateQueries({ queryKey: ["feedback-questions", assessment.id] }),
-        qc.invalidateQueries({ queryKey: ["feedback-responses", assessment.id] }),
-        qc.invalidateQueries({ queryKey: ["respostas", assessment.id] }),
+        qc.invalidateQueries({ queryKey: ["feedback-questions", assessmentId] }),
+        qc.invalidateQueries({ queryKey: ["feedback-responses", assessmentId, studentId] }),
+        qc.invalidateQueries({ queryKey: ["respostas", assessmentId] }),
       ]);
       setDirty(false);
-      if (showToast) toast.success("Comentários e correções salvos.");
+      if (showToast) toast.success("Devolutiva salva.");
     } finally {
       setSaving(false);
     }
+  }
+
+  async function uploadModelImage(questionId: string, event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!userQuery.data) return toast.error("Sua sessão expirou. Entre novamente.");
+    if (!new Set(["image/png", "image/jpeg", "image/webp"]).has(file.type)) {
+      return toast.error("Use uma imagem PNG, JPG ou WEBP.");
+    }
+    if (file.size > MAX_IMAGE_BYTES) return toast.error("A imagem deve ter no máximo 5 MB.");
+
+    setUploadingQuestionId(questionId);
+    try {
+      const filename = sanitizeFilename(file.name);
+      const path = `${userQuery.data.id}/${assessmentId}/${questionId}/${crypto.randomUUID()}-${filename}`;
+      const { error: uploadError } = await supabase.storage.from(MODEL_IMAGE_BUCKET).upload(path, file, {
+        contentType: file.type,
+        upsert: false,
+      });
+      if (uploadError) throw uploadError;
+      const { data, error: signedError } = await supabase.storage
+        .from(MODEL_IMAGE_BUCKET)
+        .createSignedUrl(path, 3600);
+      if (signedError) throw signedError;
+      setDrafts((current) => ({
+        ...current,
+        [questionId]: { ...(current[questionId] ?? emptyDraft()), imagePath: path },
+      }));
+      setImageUrls((current) => ({ ...current, [questionId]: data.signedUrl }));
+      setDirty(true);
+      toast.success("Imagem adicionada à resposta-modelo.");
+    } catch (error) {
+      toast.error(message(error));
+    } finally {
+      setUploadingQuestionId(null);
+    }
+  }
+
+  function removeModelImage(questionId: string) {
+    setDrafts((current) => ({
+      ...current,
+      [questionId]: { ...(current[questionId] ?? emptyDraft()), imagePath: null },
+    }));
+    setImageUrls((current) => ({ ...current, [questionId]: null }));
+    setDirty(true);
   }
 
   async function connect() {
     const expectedEmail = userQuery.data?.email;
     if (!expectedEmail) return toast.error("A conta do sistema não possui um e-mail válido.");
     try {
-      const clientId = (import.meta.env as { VITE_GOOGLE_GMAIL_CLIENT_ID?: string }).VITE_GOOGLE_GMAIL_CLIENT_ID ?? "";
+      const clientId =
+        (import.meta.env as { VITE_GOOGLE_GMAIL_CLIENT_ID?: string }).VITE_GOOGLE_GMAIL_CLIENT_ID ?? "";
       const connection = await connectGmail({ clientId, expectedEmail });
       setGmail(connection);
       toast.success(`Gmail conectado: ${connection.email}`);
@@ -220,75 +326,57 @@ export function ClassFeedbackPanel({ turmaId }: { turmaId: string }) {
     setGmail(null);
   }
 
+  async function buildPdf() {
+    if (!assessment || !student || !userQuery.data?.email) {
+      throw new Error("Não foi possível carregar os dados da devolutiva.");
+    }
+    if (dirty) await save(false);
+    const finalQuestions = questions.map((question) => {
+      const draft = drafts[question.id];
+      if (question.tipo !== "disc" || !draft) return question;
+      return {
+        ...question,
+        resposta_modelo: draft.modelAnswer.trim() || null,
+        resposta_modelo_imagem_path: draft.imagePath,
+        resposta_modelo_imagem_url: imageUrls[question.id] ?? null,
+      };
+    });
+    return generateFeedbackPdf({
+      assessment,
+      student,
+      questions: finalQuestions,
+      responses: mergeDrafts(responses, studentId, drafts),
+      teacherEmail: userQuery.data.email,
+    });
+  }
+
   async function download() {
-    if (!assessment || !student || !userQuery.data?.email) return;
     try {
-      if (dirty) await save(false);
-      const fresh = await responsesQuery.refetch();
-      const pdf = generateFeedbackPdf({
-        assessment: { ...assessment, comentario_devolutiva: generalComment.trim() || null },
-        student,
-        questions: applyOrientations(questions, orientations),
-        responses: fresh.data ?? responses,
-        teacherEmail: userQuery.data.email,
-      });
-      downloadBlob(pdf, `devolutiva-${student.nome}.pdf`);
+      const pdf = await buildPdf();
+      downloadBlob(pdf, `devolutiva-${student?.nome ?? "aluno"}.pdf`);
     } catch (error) {
       toast.error(message(error));
     }
   }
 
-  async function send(targets: FeedbackStudent[]) {
+  async function send() {
+    if (!student?.email?.trim()) return toast.error("Cadastre o e-mail deste aluno em Turmas e alunos.");
     if (!assessment || !userQuery.data?.email) return;
     if (!isGmailConnectionValid(gmail)) {
       setGmail(null);
       return toast.error("Conecte o Gmail do mesmo e-mail usado no sistema.");
     }
-
     setSending(true);
     try {
-      if (dirty) await save(false);
-      const fresh = await responsesQuery.refetch();
-      const allResponses = fresh.data ?? responses;
-      const finalAssessment = { ...assessment, comentario_devolutiva: generalComment.trim() || null };
-      const finalQuestions = applyOrientations(questions, orientations);
-      let sent = 0;
-      let failed = 0;
-      let missing = 0;
-
-      for (const target of targets) {
-        if (!target.email?.trim()) {
-          missing += 1;
-          setStatuses((current) => ({ ...current, [target.id]: { state: "missing" } }));
-          continue;
-        }
-        setStatuses((current) => ({ ...current, [target.id]: { state: "sending" } }));
-        try {
-          const pdf = generateFeedbackPdf({
-            assessment: finalAssessment,
-            student: target,
-            questions: finalQuestions,
-            responses: allResponses.filter((response) => response.aluno_id === target.id),
-            teacherEmail: userQuery.data.email,
-          });
-          await sendPdfWithGmail(gmail, {
-            to: target.email,
-            subject: `Devolutiva — ${assessment.titulo}`,
-            text: emailText(target.nome, assessment.titulo, userQuery.data.email),
-            pdf,
-            filename: `devolutiva-${target.nome}.pdf`,
-          });
-          sent += 1;
-          setStatuses((current) => ({ ...current, [target.id]: { state: "sent" } }));
-        } catch (error) {
-          failed += 1;
-          setStatuses((current) => ({ ...current, [target.id]: { state: "error", message: message(error) } }));
-        }
-      }
-
-      if (sent) toast.success(`${sent} devolutiva${sent === 1 ? " enviada" : "s enviadas"}.`);
-      if (missing) toast.warning(`${missing} aluno${missing === 1 ? " está" : "s estão"} sem e-mail.`);
-      if (failed) toast.error(`${failed} envio${failed === 1 ? " falhou" : "s falharam"}.`);
+      const pdf = await buildPdf();
+      await sendPdfWithGmail(gmail, {
+        to: student.email,
+        subject: `Devolutiva — ${assessment.titulo}`,
+        text: emailText(student.nome, assessment.titulo, userQuery.data.email),
+        pdf,
+        filename: `devolutiva-${student.nome}.pdf`,
+      });
+      toast.success(`Devolutiva enviada para ${student.email}.`);
     } catch (error) {
       toast.error(message(error));
     } finally {
@@ -296,157 +384,301 @@ export function ClassFeedbackPanel({ turmaId }: { turmaId: string }) {
     }
   }
 
-  if (assessmentsQuery.isLoading || studentsQuery.isLoading) {
-    return <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">Carregando devolutivas…</div>;
+  if (
+    assessmentQuery.isLoading ||
+    studentQuery.isLoading ||
+    questionsQuery.isLoading ||
+    responsesQuery.isLoading
+  ) {
+    return <div className="p-8 text-sm text-muted-foreground">Carregando devolutiva…</div>;
   }
 
-  if (!assessmentsQuery.data?.length) {
-    return (
-      <div className="rounded-lg border border-dashed border-border bg-card p-6 text-center">
-        <Mail className="mx-auto h-8 w-8 text-muted-foreground" />
-        <h2 className="mt-3 font-semibold">Devolutivas por e-mail</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Crie uma avaliação vinculada a esta turma para enviar os PDFs.</p>
-      </div>
-    );
+  if (!assessment || !student) {
+    return <div className="p-8 text-sm text-muted-foreground">Avaliação ou aluno não encontrado.</div>;
   }
 
   return (
-    <section className="rounded-lg border border-border bg-card">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border p-4">
-        <div>
-          <h2 className="flex items-center gap-2 font-semibold"><Mail className="h-5 w-5 text-primary" />Devolutivas por e-mail</h2>
-          <p className="mt-1 text-sm text-muted-foreground">O Gmail conectado deve ser o mesmo e-mail da conta usada no sistema.</p>
-        </div>
-        {isGmailConnectionValid(gmail) ? (
-          <div className="flex gap-2">
-            <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-              <CheckCircle2 className="mr-2 h-4 w-4" />{gmail.email}
-            </span>
-            <Button type="button" variant="outline" onClick={disconnect}>Desconectar</Button>
+    <div className="min-h-screen bg-muted/30 p-4 md:p-8">
+      <div className="mx-auto max-w-5xl space-y-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <a
+              href={`/avaliacoes/${assessmentId}`}
+              className="inline-flex items-center text-sm text-muted-foreground hover:underline"
+            >
+              <ArrowLeft className="mr-1 h-4 w-4" /> Voltar para a avaliação
+            </a>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight">Devolutiva de {student.nome}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {assessment.titulo}{assessment.disciplina ? ` · ${assessment.disciplina}` : ""} · Nota atual: {formatNumber(score)} de {formatNumber(Number(assessment.valor_total))}
+            </p>
           </div>
-        ) : (
-          <Button type="button" variant="outline" onClick={() => void connect()}>
-            <Link2 className="mr-2 h-4 w-4" />Conectar Gmail
-          </Button>
-        )}
-      </header>
-
-      <div className="space-y-6 p-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Avaliação">
-            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={assessmentId} onChange={(event) => setAssessmentId(event.target.value)}>
-              {assessmentsQuery.data.map((item) => <option key={item.id} value={item.id}>{item.titulo}</option>)}
-            </select>
-          </Field>
-          <Field label="Aluno em edição">
-            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={studentId} onChange={(event) => setStudentId(event.target.value)}>
-              {(studentsQuery.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.nome}{item.email ? ` · ${item.email}` : " · sem e-mail"}</option>)}
-            </select>
-          </Field>
+          {isGmailConnectionValid(gmail) ? (
+            <div className="flex gap-2">
+              <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                <CheckCircle2 className="mr-2 h-4 w-4" /> {gmail.email}
+              </span>
+              <Button type="button" variant="outline" onClick={disconnect}>Desconectar</Button>
+            </div>
+          ) : (
+            <Button type="button" variant="outline" onClick={() => void connect()}>
+              <Link2 className="mr-2 h-4 w-4" /> Conectar Gmail
+            </Button>
+          )}
         </div>
 
-        {!studentsQuery.data?.length ? (
-          <p className="rounded-md border border-dashed border-border p-5 text-center text-sm text-muted-foreground">Cadastre alunos e seus e-mails antes de enviar.</p>
-        ) : (
-          <>
-            <Field label="Comentário geral da avaliação">
-              <textarea rows={4} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={generalComment} onChange={(event) => { setGeneralComment(event.target.value); setDirty(true); }} placeholder="Pontos positivos, conteúdos a revisar e próximos passos." />
-            </Field>
-
-            <div className="space-y-2">
-              <div><h3 className="font-medium">Orientação de correção por questão</h3><p className="text-xs text-muted-foreground">Nas discursivas, descreva o raciocínio esperado.</p></div>
-              <div className="divide-y divide-border rounded-md border border-border">
+        <section className="overflow-hidden rounded-lg border border-border bg-card">
+          <div className="border-b border-border p-4">
+            <h2 className="font-semibold">Gabarito original da prova</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Este gabarito será incluído obrigatoriamente no PDF da devolutiva.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 text-left text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-2 w-20">Questão</th>
+                  <th className="px-4 py-2 w-44">Tipo</th>
+                  <th className="px-4 py-2">Resposta oficial</th>
+                </tr>
+              </thead>
+              <tbody>
                 {questions.map((question) => (
-                  <div key={question.id} className="grid gap-2 p-3 md:grid-cols-[120px_1fr]">
-                    <div className="text-sm"><strong>Questão {question.numero}</strong><div className="text-xs text-muted-foreground">{question.tipo === "disc" ? "Discursiva" : question.conteudo || "Objetiva"}</div></div>
-                    <textarea rows={2} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={orientations[question.id] ?? ""} onChange={(event) => { setOrientations((current) => ({ ...current, [question.id]: event.target.value })); setDirty(true); }} placeholder={question.tipo === "disc" ? "Conceitos, etapas e justificativas esperados." : "Conteúdo que deve ser revisado."} />
-                  </div>
+                  <tr key={question.id} className="border-t border-border">
+                    <td className="px-4 py-2 font-medium">{question.numero}</td>
+                    <td className="px-4 py-2">{questionTypeLabel(question.tipo)}</td>
+                    <td className="px-4 py-2">
+                      {question.anulada
+                        ? "Anulada"
+                        : question.tipo === "disc"
+                          ? "Resposta-modelo configurada abaixo"
+                          : question.gabarito || "Não informado"}
+                    </td>
+                  </tr>
                 ))}
-              </div>
-            </div>
+              </tbody>
+            </table>
+          </div>
+        </section>
 
-            {student && (
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-end justify-between gap-2">
-                  <div><h3 className="font-medium">Correção individual de {student.nome}</h3><p className="text-xs text-muted-foreground">Nota atual: {formatNumber(score)} de {formatNumber(Number(assessment?.valor_total ?? 0))}</p></div>
-                  {!student.email && <span className="inline-flex items-center text-xs text-amber-700"><AlertCircle className="mr-1 h-4 w-4" />Cadastre o e-mail acima.</span>}
-                </div>
-                {discursiveQuestions.length ? discursiveQuestions.map((question) => {
-                  const draft = discursive[question.id] ?? { score: "", feedback: "" };
-                  return (
-                    <div key={question.id} className="rounded-md border border-border p-3">
-                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                        <strong>Questão {question.numero}</strong>
-                        <div className="flex items-center gap-2 text-sm"><Label htmlFor={`score-${question.id}`}>Nota</Label><Input id={`score-${question.id}`} className="w-24" inputMode="decimal" value={draft.score} onChange={(event) => { setDiscursive((current) => ({ ...current, [question.id]: { ...draft, score: event.target.value } })); setDirty(true); }} /><span className="text-muted-foreground">/ {formatNumber(question.valor)}</span></div>
+        <section className="rounded-lg border border-border bg-card">
+          <div className="border-b border-border p-4">
+            <h2 className="font-semibold">Correção das questões discursivas</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Os comentários do professor aparecem somente nas discursivas. A resposta-modelo é comum a todos os alunos e pode conter texto, imagem ou ambos.
+            </p>
+          </div>
+
+          {discursiveQuestions.length === 0 ? (
+            <div className="p-6 text-sm text-muted-foreground">
+              Esta avaliação não possui questões discursivas. O PDF terá o gabarito e o resultado das questões objetivas.
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {discursiveQuestions.map((question) => {
+                const draft = drafts[question.id] ?? emptyDraft();
+                const imageUrl = imageUrls[question.id];
+                return (
+                  <div key={question.id} className="space-y-5 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h3 className="font-semibold">Questão {question.numero}</h3>
+                        <p className="text-xs text-muted-foreground">Valor: {formatNumber(Number(question.valor))} ponto(s)</p>
                       </div>
-                      <Label htmlFor={`feedback-${question.id}`}>Comentário para este aluno</Label>
-                      <textarea id={`feedback-${question.id}`} rows={3} className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={draft.feedback} onChange={(event) => { setDiscursive((current) => ({ ...current, [question.id]: { ...draft, feedback: event.target.value } })); setDirty(true); }} placeholder="O que foi bem desenvolvido e o que precisa ser corrigido." />
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor={`score-${question.id}`}>Nota</Label>
+                        <Input
+                          id={`score-${question.id}`}
+                          className="w-24"
+                          inputMode="decimal"
+                          value={draft.score}
+                          onChange={(event) => updateDraft(question.id, { score: event.target.value }, setDrafts, setDirty)}
+                        />
+                        <span className="text-sm text-muted-foreground">/ {formatNumber(Number(question.valor))}</span>
+                      </div>
                     </div>
-                  );
-                }) : <p className="rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">A avaliação não possui questões discursivas.</p>}
-              </div>
-            )}
 
-            <div className="flex flex-wrap justify-between gap-3 border-t border-border pt-4">
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" disabled={!student || saving || sending} onClick={() => void download()}><Download className="mr-2 h-4 w-4" />Baixar PDF</Button>
-                <Button type="button" variant="outline" disabled={!dirty || saving || sending} onClick={() => void save().catch((error) => toast.error(message(error)))}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}Salvar</Button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" disabled={!student || sending || !isGmailConnectionValid(gmail)} onClick={() => student && void send([student])}><Send className="mr-2 h-4 w-4" />Enviar ao aluno</Button>
-                <Button type="button" disabled={sending || !isGmailConnectionValid(gmail)} onClick={() => void send(studentsQuery.data ?? [])}>{sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}Enviar para a turma</Button>
-              </div>
-            </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`model-${question.id}`}>Resposta-modelo em texto</Label>
+                      <textarea
+                        id={`model-${question.id}`}
+                        rows={4}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={draft.modelAnswer}
+                        onChange={(event) => updateDraft(question.id, { modelAnswer: event.target.value }, setDrafts, setDirty)}
+                        placeholder="Digite a resposta esperada, os conceitos e o raciocínio correto."
+                      />
+                    </div>
 
-            {Object.keys(statuses).length > 0 && (
-              <div className="divide-y divide-border rounded-md border border-border">
-                {(studentsQuery.data ?? []).filter((item) => statuses[item.id]).map((item) => (
-                  <div key={item.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-                    <div><strong>{item.nome}</strong><div className="text-xs text-muted-foreground">{item.email || "Sem e-mail"}</div></div>
-                    <Status status={statuses[item.id]} />
+                    <div className="space-y-2">
+                      <Label>Imagem da resposta-modelo</Label>
+                      <div className="flex flex-wrap items-start gap-3">
+                        <label className="inline-flex cursor-pointer items-center rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-muted">
+                          {uploadingQuestionId === question.id ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <ImagePlus className="mr-2 h-4 w-4" />
+                          )}
+                          {imageUrl ? "Trocar imagem" : "Adicionar imagem"}
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            className="hidden"
+                            disabled={uploadingQuestionId === question.id}
+                            onChange={(event) => void uploadModelImage(question.id, event)}
+                          />
+                        </label>
+                        {imageUrl && (
+                          <Button type="button" variant="outline" onClick={() => removeModelImage(question.id)}>
+                            <Trash2 className="mr-2 h-4 w-4" /> Remover imagem
+                          </Button>
+                        )}
+                      </div>
+                      {imageUrl && (
+                        <img
+                          src={imageUrl}
+                          alt={`Resposta-modelo da questão ${question.numero}`}
+                          className="max-h-80 max-w-full rounded-md border border-border object-contain"
+                        />
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`answer-${question.id}`}>Resposta do aluno</Label>
+                      <textarea
+                        id={`answer-${question.id}`}
+                        rows={3}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={draft.answer}
+                        onChange={(event) => updateDraft(question.id, { answer: event.target.value }, setDrafts, setDirty)}
+                        placeholder="Registre a resposta do aluno, caso ela não esteja salva automaticamente."
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`feedback-${question.id}`}>Comentário individual para o aluno</Label>
+                      <textarea
+                        id={`feedback-${question.id}`}
+                        rows={3}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={draft.feedback}
+                        onChange={(event) => updateDraft(question.id, { feedback: event.target.value }, setDrafts, setDirty)}
+                        placeholder="Explique o que foi bem desenvolvido e o que precisa ser corrigido."
+                      />
+                    </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {!student.email && (
+          <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            Cadastre o e-mail de {student.nome} na área Turmas e alunos antes de enviar.
+          </div>
         )}
+
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!dirty || saving || sending}
+              onClick={() => void save().catch((error) => toast.error(message(error)))}
+            >
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Salvar devolutiva
+            </Button>
+            <Button type="button" variant="outline" disabled={saving || sending} onClick={() => void download()}>
+              <Download className="mr-2 h-4 w-4" /> Baixar PDF
+            </Button>
+          </div>
+          <Button
+            type="button"
+            disabled={saving || sending || !student.email || !isGmailConnectionValid(gmail)}
+            onClick={() => void send()}
+          >
+            {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+            Enviar por e-mail
+          </Button>
+        </div>
       </div>
-    </section>
+    </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return <div className="space-y-1.5"><Label>{label}</Label>{children}</div>;
+function emptyDraft(): DiscursiveDraft {
+  return {
+    answer: "",
+    score: "",
+    feedback: "",
+    modelAnswer: "",
+    imagePath: null,
+    originalImagePath: null,
+  };
 }
 
-function Status({ status }: { status: SendStatus }) {
-  if (status.state === "sending") return <span className="inline-flex items-center text-xs text-muted-foreground"><Loader2 className="mr-1 h-4 w-4 animate-spin" />Enviando</span>;
-  if (status.state === "sent") return <span className="inline-flex items-center text-xs text-emerald-700"><CheckCircle2 className="mr-1 h-4 w-4" />Enviado</span>;
-  if (status.state === "missing") return <span className="inline-flex items-center text-xs text-amber-700"><AlertCircle className="mr-1 h-4 w-4" />Sem e-mail</span>;
-  return <span className="inline-flex max-w-xs items-center text-right text-xs text-red-700" title={status.message}><AlertCircle className="mr-1 h-4 w-4 shrink-0" />{status.message || "Erro"}</span>;
+function updateDraft(
+  questionId: string,
+  patch: Partial<DiscursiveDraft>,
+  setDrafts: React.Dispatch<React.SetStateAction<Record<string, DiscursiveDraft>>>,
+  setDirty: React.Dispatch<React.SetStateAction<boolean>>,
+) {
+  setDrafts((current) => ({
+    ...current,
+    [questionId]: { ...(current[questionId] ?? emptyDraft()), ...patch },
+  }));
+  setDirty(true);
 }
 
-function mergeDrafts(responses: FeedbackResponse[], studentId: string, drafts: Record<string, DiscursiveDraft>): FeedbackResponse[] {
+function mergeDrafts(
+  responses: FeedbackResponse[],
+  studentId: string,
+  drafts: Record<string, DiscursiveDraft>,
+): FeedbackResponse[] {
   const byQuestion = new Map(responses.map((response) => [response.questao_id, response]));
   for (const [questionId, draft] of Object.entries(drafts)) {
-    const existing = byQuestion.get(questionId);
     byQuestion.set(questionId, {
       aluno_id: studentId,
       questao_id: questionId,
-      resposta: existing?.resposta ?? null,
+      resposta: draft.answer.trim() || null,
       nota_manual: draft.score.trim() === "" ? null : Number(draft.score.replace(",", ".")),
-      feedback: draft.feedback || null,
+      feedback: draft.feedback.trim() || null,
     });
   }
   return [...byQuestion.values()];
 }
 
-function applyOrientations(questions: FeedbackQuestion[], values: Record<string, string>): FeedbackQuestion[] {
-  return questions.map((question) => ({ ...question, orientacao_correcao: values[question.id]?.trim() || null }));
+function parseScore(value: string, questionNumber: number, maximum: number): number | null {
+  if (!value.trim()) return null;
+  const parsed = Number(value.replace(",", "."));
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > maximum) {
+    throw new Error(`A nota da questão ${questionNumber} deve ficar entre 0 e ${formatNumber(maximum)}.`);
+  }
+  return parsed;
+}
+
+function questionTypeLabel(type: FeedbackQuestion["tipo"]): string {
+  if (type === "mc") return "Múltipla escolha";
+  if (type === "ce") return "Certo/Errado";
+  if (type === "num") return "Numérica";
+  return "Discursiva";
+}
+
+function sanitizeFilename(value: string): string {
+  const normalized = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || "resposta-modelo.jpg";
 }
 
 function emailText(studentName: string, assessmentTitle: string, teacherEmail: string): string {
-  return `Olá, ${studentName}.\n\nSegue em anexo a devolutiva da avaliação “${assessmentTitle}”. No PDF estão sua nota, os comentários do professor e as orientações de correção.\n\nAtenciosamente,\n${teacherEmail}`;
+  return `Olá, ${studentName}.\n\nSegue em anexo a devolutiva da avaliação “${assessmentTitle}”. O PDF contém o gabarito original da prova e, nas questões discursivas, a resposta-modelo, sua pontuação e os comentários do professor.\n\nAtenciosamente,\n${teacherEmail}`;
 }
 
 function downloadBlob(blob: Blob, filename: string) {
