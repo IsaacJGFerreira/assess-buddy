@@ -214,11 +214,39 @@ function ConfigTab({ avaliacaoId }: { avaliacaoId: string }) {
 
   const move = useMutation({
     mutationFn: async ({ id, novaPosicao }: { id: string; novaPosicao: number }) => {
-      const { error } = await supabase.rpc("mover_questao", {
-        p_questao_id: id,
-        p_nova_posicao: novaPosicao,
-      });
-      if (error) throw error;
+      const questaoAtual = questoes.find((questao) => questao.id === id);
+      const questaoDestino = questoes[novaPosicao - 1];
+      if (!questaoAtual || !questaoDestino || questaoAtual.id === questaoDestino.id) return;
+
+      const numeroTemporario = Math.min(-1, ...questoes.map((questao) => questao.numero)) - 1;
+      const atualizarNumero = async (questaoId: string, numero: number) => {
+        const { error } = await supabase
+          .from("questoes")
+          .update({ numero })
+          .eq("id", questaoId)
+          .eq("avaliacao_id", avaliacaoId)
+          .select("id")
+          .single();
+        if (error) throw error;
+      };
+
+      try {
+        // Libera o número atual antes da troca para respeitar a restrição de unicidade.
+        await atualizarNumero(questaoAtual.id, numeroTemporario);
+        await atualizarNumero(questaoDestino.id, questaoAtual.numero);
+        await atualizarNumero(questaoAtual.id, questaoDestino.numero);
+      } catch (error) {
+        try {
+          // Restaura a ordem original mesmo se a falha acontecer no meio da troca.
+          await atualizarNumero(questaoAtual.id, numeroTemporario);
+          await atualizarNumero(questaoDestino.id, questaoDestino.numero);
+          await atualizarNumero(questaoAtual.id, questaoAtual.numero);
+        } catch (rollbackError) {
+          console.error("Não foi possível restaurar a ordem original dos itens.", rollbackError);
+          throw new Error("A ordenação não foi concluída. Recarregue a página e tente novamente.");
+        }
+        throw error;
+      }
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["questoes", avaliacaoId] }),
     onError: (e: Error) => toast.error(e.message),
