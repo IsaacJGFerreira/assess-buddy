@@ -7,7 +7,7 @@ export interface AnswerSheetLayout {
 }
 
 export const DEFAULT_ANSWER_SHEET_LAYOUT: AnswerSheetLayout = {
-  columns: 5,
-  rowsPerColumn: 20,
-  orientation: "landscape",
+  columns: 2,
+  rowsPerColumn: 35,
+  orientation: "portrait",
 };
