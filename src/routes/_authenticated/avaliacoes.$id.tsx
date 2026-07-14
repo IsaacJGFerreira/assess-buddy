@@ -49,6 +49,8 @@ import {
   Loader2,
   Plus,
   Printer,
+  RectangleHorizontal,
+  RectangleVertical,
   Trash2,
   TriangleAlert,
 } from "lucide-react";
@@ -436,10 +438,14 @@ function GabaritoTab({ avaliacaoId }: { avaliacaoId: string }) {
 function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Questao[] }) {
   const queryClient = useQueryClient();
   const [orientationOverride, setOrientationOverride] = useState<AnswerSheetOrientation | null>(
-    null,
+    DEFAULT_ANSWER_SHEET_LAYOUT.orientation,
   );
-  const [columnsOverride, setColumnsOverride] = useState<number | null>(null);
-  const [rowsOverride, setRowsOverride] = useState<number | null>(null);
+  const [columnsOverride, setColumnsOverride] = useState<number | null>(
+    DEFAULT_ANSWER_SHEET_LAYOUT.columns,
+  );
+  const [rowsOverride, setRowsOverride] = useState<number | null>(
+    DEFAULT_ANSWER_SHEET_LAYOUT.rowsPerColumn,
+  );
   const [preview, setPreview] = useState<{
     alunoId?: string;
     identification: IdentificacaoFolhaResposta | null;
@@ -512,6 +518,12 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
     if (value === "landscape" && rowsPerColumn > 25) setRowsOverride(25);
   }
 
+  function applyEconomicDefault() {
+    setOrientationOverride(DEFAULT_ANSWER_SHEET_LAYOUT.orientation);
+    setColumnsOverride(DEFAULT_ANSWER_SHEET_LAYOUT.columns);
+    setRowsOverride(DEFAULT_ANSWER_SHEET_LAYOUT.rowsPerColumn);
+  }
+
   if (preview) {
     return (
       <EmbeddedAnswerSheetPreview
@@ -528,90 +540,142 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-border bg-card p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <LayoutGrid className="h-4 w-4" />
-          <h3 className="font-semibold">Configuração da folha de respostas</h3>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Organize a grade antes de visualizar. O modelo é salvo e versionado automaticamente.
-        </p>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_330px] xl:items-start">
+        <section className="min-w-0 overflow-hidden rounded-lg border border-border bg-muted/30">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-card px-4 py-3">
+            <div>
+              <h3 className="flex items-center gap-2 font-semibold">
+                <LayoutGrid className="h-4 w-4" /> Prévia da folha
+              </h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                A grade é atualizada automaticamente conforme os controles ao lado.
+              </p>
+            </div>
+            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+              {sheetSearch.colunas} × {rowsPerColumn} · {sheetSearch.colunas * rowsPerColumn} itens
+            </span>
+          </div>
 
-        <div className="mt-3 inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-          {savedModel.isLoading
-            ? "Carregando modelo salvo…"
-            : savedModel.data
-              ? `Modelo salvo · versão ${savedModel.data.versao}`
-              : "O primeiro modelo será criado ao visualizar"}
-        </div>
+          {questoes.length === 0 ? (
+            <div className="p-10 text-center text-sm text-muted-foreground">
+              Cadastre ao menos uma questão para visualizar a folha.
+            </div>
+          ) : (
+            <div className="answer-sheet-inline-viewport max-h-[78vh] max-w-full overflow-auto">
+              <div className="answer-sheet-export-root">
+                <AnswerSheet avaliacao={avaliacao} questoes={questoes} layout={layout} />
+              </div>
+            </div>
+          )}
+        </section>
 
-        <div className="grid gap-4 mt-5 md:grid-cols-3">
-          <div className="space-y-1.5">
-            <Label>Orientação</Label>
-            <Select
-              value={orientation}
-              onValueChange={(value) => changeOrientation(value as AnswerSheetOrientation)}
+        <aside className="space-y-4 xl:sticky xl:top-4">
+          <div className="rounded-lg border border-border bg-card p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="font-semibold">Configuração</h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Ajuste o formato antes de salvar.
+                </p>
+              </div>
+              <Button type="button" size="sm" variant="ghost" onClick={applyEconomicDefault}>
+                Usar padrão
+              </Button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              <fieldset className="space-y-2">
+                <legend className="text-sm font-medium">Orientação</legend>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => changeOrientation("portrait")}
+                    className={`flex flex-col items-center gap-2 rounded-md border px-3 py-3 text-sm transition ${orientation === "portrait" ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-muted/50"}`}
+                    aria-pressed={orientation === "portrait"}
+                  >
+                    <RectangleVertical className="h-6 w-6" />
+                    A4 retrato
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => changeOrientation("landscape")}
+                    className={`flex flex-col items-center gap-2 rounded-md border px-3 py-3 text-sm transition ${orientation === "landscape" ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-muted/50"}`}
+                    aria-pressed={orientation === "landscape"}
+                  >
+                    <RectangleHorizontal className="h-6 w-6" />
+                    A4 paisagem
+                  </button>
+                </div>
+              </fieldset>
+
+              <div className="space-y-1.5">
+                <Label>Colunas</Label>
+                <Select
+                  value={String(columns)}
+                  onValueChange={(value) => setColumnsOverride(Number(value))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: maxColumns }, (_, index) => index + 1).map((value) => (
+                      <SelectItem key={value} value={String(value)}>
+                        {value} coluna{value > 1 ? "s" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="sheet-rows">Linhas por coluna</Label>
+                <Input
+                  id="sheet-rows"
+                  type="number"
+                  min={5}
+                  max={orientation === "landscape" ? 25 : 35}
+                  value={rowsPerColumn}
+                  onChange={(event) => {
+                    const maximum = orientation === "landscape" ? 25 : 35;
+                    setRowsOverride(
+                      Math.min(maximum, Math.max(5, Number(event.target.value) || 5)),
+                    );
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Máximo de {orientation === "landscape" ? 25 : 35} linhas nesta orientação.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border bg-card p-4">
+            <div className="text-sm font-medium">
+              {savedModel.isLoading
+                ? "Carregando modelo salvo…"
+                : savedModel.data
+                  ? `Próxima versão: ${savedModel.data.versao + 1}`
+                  : "Primeira versão da folha"}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              A folha será salva em A4 {orientation === "portrait" ? "retrato" : "paisagem"}, com
+              capacidade para {sheetSearch.colunas * rowsPerColumn} questões por página.
+            </p>
+            <Button
+              type="button"
+              className="mt-4 w-full"
+              onClick={() => generateSheet.mutate({})}
+              disabled={generateSheet.isPending || savedModel.isLoading || questoes.length === 0}
             >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="landscape">A4 paisagem</SelectItem>
-                <SelectItem value="portrait">A4 retrato</SelectItem>
-              </SelectContent>
-            </Select>
+              {generateSheet.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <FileText className="mr-2 h-4 w-4" />
+              )}
+              Salvar e abrir folha
+            </Button>
           </div>
-          <div className="space-y-1.5">
-            <Label>Colunas</Label>
-            <Select
-              value={String(columns)}
-              onValueChange={(value) => setColumnsOverride(Number(value))}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Array.from({ length: maxColumns }, (_, index) => index + 1).map((value) => (
-                  <SelectItem key={value} value={String(value)}>
-                    {value} coluna{value > 1 ? "s" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="sheet-rows">Linhas por coluna</Label>
-            <Input
-              id="sheet-rows"
-              type="number"
-              min={5}
-              max={orientation === "landscape" ? 25 : 35}
-              value={rowsPerColumn}
-              onChange={(event) => {
-                const maximum = orientation === "landscape" ? 25 : 35;
-                setRowsOverride(Math.min(maximum, Math.max(5, Number(event.target.value) || 5)));
-              }}
-            />
-          </div>
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            onClick={() => generateSheet.mutate({})}
-            disabled={generateSheet.isPending || savedModel.isLoading || questoes.length === 0}
-          >
-            {generateSheet.isPending ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <FileText className="h-4 w-4 mr-2" />
-            )}
-            Salvar e visualizar folha genérica
-          </Button>
-          <span className="text-xs text-muted-foreground">
-            Capacidade de {sheetSearch.colunas * rowsPerColumn} questões por página.
-          </span>
-        </div>
+        </aside>
       </div>
       {turmaId && (alunos.data?.length ?? 0) > 0 && (
         <div className="rounded-lg border border-border bg-card p-4">
