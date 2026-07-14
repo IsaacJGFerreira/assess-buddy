@@ -869,7 +869,6 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
                     <SelectContent>
                       {eligibleStudents.map((student) => (
                         <SelectItem key={student.id} value={student.id}>
-                          {student.chamada ? `${student.chamada}. ` : ""}
                           {student.nome} · {student.matricula}
                         </SelectItem>
                       ))}
@@ -1254,10 +1253,7 @@ function CorrecaoTab({ avaliacao }: { avaliacao: Avaliacao }) {
                 onClick={() => setAlunoId(a.id)}
                 className={`w-full text-left px-3 py-2 text-sm border-b border-border last:border-0 hover:bg-muted/50 ${active === a.id ? "bg-muted" : ""}`}
               >
-                <div className="font-medium">
-                  {a.chamada ? `${a.chamada}. ` : ""}
-                  {a.nome}
-                </div>
+                <div className="font-medium">{a.nome}</div>
                 <div className="text-xs text-muted-foreground">
                   {preenchidas}/{questoes.data.length} respondidas
                 </div>
@@ -1468,10 +1464,7 @@ function RelatorioTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: 
           <tbody>
             {notas.map((n) => (
               <tr key={n.aluno.id} className="border-t border-border">
-                <td className="px-4 py-2">
-                  {n.aluno.chamada ? `${n.aluno.chamada}. ` : ""}
-                  {n.aluno.nome}
-                </td>
+                <td className="px-4 py-2">{n.aluno.nome}</td>
                 <td className="px-4 py-2 font-semibold">{n.nota.toFixed(2)}</td>
                 <td className="px-4 py-2">{n.acertos}</td>
                 <td className="px-4 py-2">{n.erros}</td>

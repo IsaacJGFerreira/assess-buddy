@@ -157,9 +157,14 @@ export async function listAlunosByTurma(turmaId: string): Promise<Aluno[]> {
     .from("alunos")
     .select("*")
     .eq("turma_id", turmaId)
-    .order("chamada", { ascending: true, nullsFirst: false });
+    .order("nome");
   if (error) throw error;
   return data as Aluno[];
+}
+
+export async function deleteTurma(turmaId: string): Promise<void> {
+  const { error } = await supabase.from("turmas").delete().eq("id", turmaId).select("id").single();
+  if (error) throw error;
 }
 
 export async function listAvaliacoes(): Promise<Avaliacao[]> {
@@ -169,6 +174,36 @@ export async function listAvaliacoes(): Promise<Avaliacao[]> {
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data as Avaliacao[];
+}
+
+export async function deleteAvaliacao(
+  avaliacaoId: string,
+): Promise<{ storageCleanupFailed: boolean }> {
+  const { data: scans, error: scansError } = await supabase
+    .from("digitalizacoes_folhas")
+    .select("storage_path")
+    .eq("avaliacao_id", avaliacaoId);
+  if (scansError && !isAnswerSheetPersistenceUnavailable(scansError)) throw scansError;
+
+  const { error } = await supabase
+    .from("avaliacoes")
+    .delete()
+    .eq("id", avaliacaoId)
+    .select("id")
+    .single();
+  if (error) throw error;
+
+  const storagePaths = (scans ?? []).map((scan) => scan.storage_path);
+  if (storagePaths.length === 0) return { storageCleanupFailed: false };
+
+  let storageCleanupFailed = false;
+  for (let index = 0; index < storagePaths.length; index += 100) {
+    const { error: storageError } = await supabase.storage
+      .from("folhas-digitalizadas")
+      .remove(storagePaths.slice(index, index + 100));
+    storageCleanupFailed ||= Boolean(storageError);
+  }
+  return { storageCleanupFailed };
 }
 
 export async function getAvaliacao(id: string): Promise<Avaliacao> {
