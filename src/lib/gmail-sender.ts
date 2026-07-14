@@ -1,34 +1,7 @@
-type GoogleTokenResponse = {
-  access_token?: string;
-  expires_in?: number;
-  error?: string;
-  error_description?: string;
-};
-
-type GoogleTokenClient = {
-  requestAccessToken: (options?: { prompt?: string }) => void;
-};
-
-type GoogleAccounts = {
-  oauth2: {
-    initTokenClient: (config: {
-      client_id: string;
-      scope: string;
-      callback: (response: GoogleTokenResponse) => void;
-      error_callback?: (error: unknown) => void;
-    }) => GoogleTokenClient;
-    revoke: (token: string, done?: () => void) => void;
-  };
-};
-
-declare global {
-  interface Window {
-    google?: { accounts: GoogleAccounts };
-  }
-}
+import { supabase } from "@/integrations/supabase/client";
 
 export interface GmailConnection {
-  accessToken: string;
+  accessToken: "server";
   email: string;
   expiresAt: number;
 }
@@ -41,108 +14,73 @@ export interface GmailPdfMessage {
   filename?: string;
 }
 
-let googleScriptPromise: Promise<void> | null = null;
+type OAuthStartResponse = {
+  connected?: boolean;
+  email?: string;
+  authorizationUrl?: string;
+  error?: string;
+  code?: string;
+};
 
-function loadGoogleIdentityServices(): Promise<void> {
-  if (window.google?.accounts?.oauth2) return Promise.resolve();
-  if (googleScriptPromise) return googleScriptPromise;
+type FunctionErrorPayload = {
+  error?: string;
+  code?: string;
+};
 
-  googleScriptPromise = new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(
-      'script[src="https://accounts.google.com/gsi/client"]',
-    );
-    if (existing) {
-      const startedAt = Date.now();
-      const timer = window.setInterval(() => {
-        if (window.google?.accounts.oauth2) {
-          window.clearInterval(timer);
-          resolve();
-        } else if (Date.now() - startedAt > 10_000) {
-          window.clearInterval(timer);
-          reject(new Error("Não foi possível carregar o login do Google."));
-        }
-      }, 100);
-      return;
-    }
+export const GMAIL_SETUP_AFTER_GOOGLE_LOGIN_KEY = "folha.gmail.setup-after-google-login";
 
-    const script = document.createElement("script");
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Não foi possível carregar o login do Google."));
-    document.head.appendChild(script);
-  });
+export function markGmailSetupAfterGoogleLogin(): void {
+  if (typeof window !== "undefined") sessionStorage.setItem(GMAIL_SETUP_AFTER_GOOGLE_LOGIN_KEY, "1");
+}
 
-  return googleScriptPromise;
+export function clearGmailSetupAfterGoogleLogin(): void {
+  if (typeof window !== "undefined") sessionStorage.removeItem(GMAIL_SETUP_AFTER_GOOGLE_LOGIN_KEY);
+}
+
+export function shouldSetupGmailAfterGoogleLogin(): boolean {
+  return typeof window !== "undefined" && sessionStorage.getItem(GMAIL_SETUP_AFTER_GOOGLE_LOGIN_KEY) === "1";
 }
 
 export async function connectGmail({
-  clientId,
   expectedEmail,
+  force = false,
+  returnUrl,
 }: {
-  clientId: string;
+  clientId?: string;
   expectedEmail: string;
+  force?: boolean;
+  returnUrl?: string;
 }): Promise<GmailConnection> {
-  if (!clientId.trim()) {
-    throw new Error("Configure VITE_GOOGLE_GMAIL_CLIENT_ID antes de conectar o Gmail.");
-  }
-
-  await loadGoogleIdentityServices();
-  const oauth2 = window.google?.accounts.oauth2;
-  if (!oauth2) throw new Error("O serviço de autorização do Google não ficou disponível.");
-
-  const token = await new Promise<GoogleTokenResponse>((resolve, reject) => {
-    const client = oauth2.initTokenClient({
-      client_id: clientId,
-      scope: "openid email https://www.googleapis.com/auth/gmail.send",
-      callback: resolve,
-      error_callback: reject,
-    });
-    client.requestAccessToken({ prompt: "consent" });
+  const payload = await callFunction<OAuthStartResponse>("gmail-oauth", {
+    returnUrl: returnUrl ?? window.location.href,
+    force,
   });
 
-  if (!token.access_token) {
-    throw new Error(token.error_description || token.error || "O Google não autorizou o envio de e-mails.");
+  if (payload.connected && payload.email) {
+    const connectedEmail = payload.email.trim().toLowerCase();
+    const authenticatedEmail = expectedEmail.trim().toLowerCase();
+    if (connectedEmail !== authenticatedEmail) {
+      throw new Error(
+        `O Gmail autorizado (${connectedEmail}) não corresponde ao e-mail do professor (${authenticatedEmail}).`,
+      );
+    }
+    return { accessToken: "server", email: connectedEmail, expiresAt: Number.MAX_SAFE_INTEGER };
   }
 
-  const profileResponse = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-    headers: { Authorization: `Bearer ${token.access_token}` },
-  });
-  if (!profileResponse.ok) {
-    oauth2.revoke(token.access_token);
-    throw new Error("Não foi possível confirmar qual conta Google foi conectada.");
+  if (payload.authorizationUrl) {
+    window.location.assign(payload.authorizationUrl);
+    return new Promise<GmailConnection>(() => undefined);
   }
 
-  const profile = (await profileResponse.json()) as { email?: string };
-  const connectedEmail = profile.email?.trim().toLowerCase();
-  const authenticatedEmail = expectedEmail.trim().toLowerCase();
-
-  if (!connectedEmail) {
-    oauth2.revoke(token.access_token);
-    throw new Error("A conta Google conectada não informou um endereço de e-mail.");
-  }
-  if (connectedEmail !== authenticatedEmail) {
-    oauth2.revoke(token.access_token);
-    throw new Error(
-      `Conecte o mesmo e-mail usado no sistema (${authenticatedEmail}). A conta escolhida foi ${connectedEmail}.`,
-    );
-  }
-
-  return {
-    accessToken: token.access_token,
-    email: connectedEmail,
-    expiresAt: Date.now() + Math.max(60, token.expires_in ?? 3600) * 1000,
-  };
+  throw new Error(payload.error || "Não foi possível autorizar o Gmail do professor.");
 }
 
 export function isGmailConnectionValid(connection: GmailConnection | null): connection is GmailConnection {
-  return Boolean(connection && connection.expiresAt > Date.now() + 60_000);
+  return Boolean(connection?.email && connection.expiresAt > Date.now());
 }
 
-export function disconnectGmail(connection: GmailConnection | null): void {
-  if (!connection?.accessToken || !window.google?.accounts.oauth2) return;
-  window.google.accounts.oauth2.revoke(connection.accessToken);
+export function disconnectGmail(_connection: GmailConnection | null): void {
+  // A autorização persistente é administrada no backend e na Conta Google do professor.
 }
 
 export async function sendPdfWithGmail(
@@ -150,61 +88,64 @@ export async function sendPdfWithGmail(
   message: GmailPdfMessage,
 ): Promise<void> {
   if (!isGmailConnectionValid(connection)) {
-    throw new Error("A autorização do Gmail expirou. Conecte a conta novamente.");
+    throw new Error("O Gmail do professor ainda não está pronto para envio.");
   }
 
-  const filename = sanitizeFilename(message.filename ?? "devolutiva.pdf");
   const attachmentBytes = new Uint8Array(await message.pdf.arrayBuffer());
-  const boundary = `feedback_${crypto.randomUUID().replaceAll("-", "")}`;
-  const subject = encodeMimeHeader(message.subject);
-  const bodyBase64 = bytesToBase64(new TextEncoder().encode(message.text));
-  const attachmentBase64 = wrapBase64(bytesToBase64(attachmentBytes));
+  const response = await callFunction<FunctionErrorPayload & { sent?: boolean }>("gmail-send", {
+    to: message.to,
+    subject: message.subject,
+    text: message.text,
+    pdfBase64: bytesToBase64(attachmentBytes),
+    filename: message.filename ?? "devolutiva.pdf",
+  }, false);
 
-  const mime = [
-    `From: ${connection.email}`,
-    `To: ${message.to}`,
-    `Subject: ${subject}`,
-    "MIME-Version: 1.0",
-    `Content-Type: multipart/mixed; boundary="${boundary}"`,
-    "",
-    `--${boundary}`,
-    'Content-Type: text/plain; charset="UTF-8"',
-    "Content-Transfer-Encoding: base64",
-    "",
-    wrapBase64(bodyBase64),
-    `--${boundary}`,
-    `Content-Type: application/pdf; name="${filename}"`,
-    "Content-Transfer-Encoding: base64",
-    `Content-Disposition: attachment; filename="${filename}"`,
-    "",
-    attachmentBase64,
-    `--${boundary}--`,
-    "",
-  ].join("\r\n");
+  if (response.code === "gmail_authorization_required") {
+    markGmailSetupAfterGoogleLogin();
+    await connectGmail({
+      expectedEmail: connection.email,
+      force: true,
+      returnUrl: window.location.href,
+    });
+    return;
+  }
 
-  const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${connection.accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ raw: toBase64Url(bytesToBase64(new TextEncoder().encode(mime))) }),
-  });
-
-  if (!response.ok) {
-    let detail = "";
-    try {
-      const payload = (await response.json()) as { error?: { message?: string } };
-      detail = payload.error?.message ?? "";
-    } catch {
-      detail = await response.text();
-    }
-    throw new Error(detail || `O Gmail recusou o envio (${response.status}).`);
+  if (!response.sent) {
+    throw new Error(response.error || "O Gmail não confirmou o envio da devolutiva.");
   }
 }
 
-function encodeMimeHeader(value: string): string {
-  return `=?UTF-8?B?${bytesToBase64(new TextEncoder().encode(value))}?=`;
+async function callFunction<T>(
+  name: string,
+  body: Record<string, unknown>,
+  throwOnHttpError = true,
+): Promise<T> {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !sessionData.session) throw new Error("Sua sessão expirou. Entre novamente.");
+
+  const supabaseUrl =
+    (import.meta.env as { VITE_SUPABASE_URL?: string }).VITE_SUPABASE_URL ??
+    (typeof process !== "undefined" ? process.env.SUPABASE_URL : undefined);
+  const publishableKey =
+    (import.meta.env as { VITE_SUPABASE_PUBLISHABLE_KEY?: string }).VITE_SUPABASE_PUBLISHABLE_KEY ??
+    (typeof process !== "undefined" ? process.env.SUPABASE_PUBLISHABLE_KEY : undefined);
+  if (!supabaseUrl || !publishableKey) throw new Error("A conexão com o backend não está configurada.");
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/${name}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${sessionData.session.access_token}`,
+      apikey: publishableKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const payload = await response.json().catch(() => ({})) as T & FunctionErrorPayload;
+  if (!response.ok && throwOnHttpError) {
+    throw new Error(payload.error || `A função ${name} falhou (${response.status}).`);
+  }
+  return payload as T;
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -214,21 +155,4 @@ function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
   }
   return btoa(binary);
-}
-
-function wrapBase64(value: string): string {
-  return value.match(/.{1,76}/g)?.join("\r\n") ?? "";
-}
-
-function toBase64Url(value: string): string {
-  return value.replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
-}
-
-function sanitizeFilename(value: string): string {
-  const normalized = value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return normalized || "devolutiva.pdf";
 }
