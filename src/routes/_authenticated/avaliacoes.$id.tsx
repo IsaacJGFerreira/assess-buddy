@@ -1020,6 +1020,7 @@ function EmbeddedAnswerSheetPreview({
   identification,
   identificationMode,
   identifierDigits,
+  eligibleStudents,
   persistenceUnavailable = false,
   onBack,
 }: {
@@ -1030,13 +1031,20 @@ function EmbeddedAnswerSheetPreview({
   identification: IdentificacaoFolhaResposta | null;
   identificationMode: AnswerSheetIdentificationMode;
   identifierDigits: number;
+  eligibleStudents: Aluno[];
   persistenceUnavailable?: boolean;
   onBack: () => void;
 }) {
   const exportRootRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState<"pdf" | "png" | null>(null);
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null);
+  const isBatchable = identificationMode === "prefilled" && eligibleStudents.length > 0;
 
   async function exportFile(format: "pdf" | "png") {
+    if (isBatchable) {
+      await exportBatch(format);
+      return;
+    }
     if (!exportRootRef.current || !identification) {
       toast.warning("Aplique a atualização do banco antes de exportar esta folha.");
       return;
@@ -1062,6 +1070,57 @@ function EmbeddedAnswerSheetPreview({
       toast.error("Não foi possível gerar o arquivo. Tente novamente.");
     } finally {
       setExporting(null);
+    }
+  }
+
+  async function exportBatch(format: "pdf" | "png") {
+    setExporting(format);
+    setBatchProgress({ done: 0, total: eligibleStudents.length });
+    try {
+      const items = [] as { fileName: string; element: React.ReactElement }[];
+      for (const student of eligibleStudents) {
+        const info = await createOrGetAnswerSheet({
+          avaliacao,
+          questoes,
+          alunoId: student.id,
+          layout,
+          identificationMode,
+          identifierDigits,
+        });
+        items.push({
+          fileName: `${avaliacao.titulo}-${student.nome}-${info.codigo}`,
+          element: (
+            <AnswerSheet
+              avaliacao={avaliacao}
+              questoes={questoes}
+              aluno={student}
+              layout={layout}
+              identificationMode={identificationMode}
+              identifierDigits={identifierDigits}
+              identification={{
+                code: info.codigo,
+                version: info.versao,
+                qrPayload: info.qrPayload,
+              }}
+            />
+          ),
+        });
+      }
+      await batchExportAnswerSheetsAsZip({
+        format,
+        items,
+        zipBaseName: `${avaliacao.titulo}-${format}`,
+        onProgress: (done, total) => setBatchProgress({ done, total }),
+      });
+      toast.success(
+        `Pacote com ${items.length} folha${items.length > 1 ? "s" : ""} gerado com sucesso.`,
+      );
+    } catch (error) {
+      console.error(error);
+      toast.error("Não foi possível gerar o pacote. Tente novamente.");
+    } finally {
+      setExporting(null);
+      setBatchProgress(null);
     }
   }
 
