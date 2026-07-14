@@ -46,14 +46,14 @@ function AnswerSheetPage({
 }) {
   const isLandscape = layout.orientation === "landscape";
   const hasNumericPanel = page.numericQuestions.length > 0;
-  const objectiveQuestions = page.questions.filter((question) => question.tipo !== "num");
-  const visibleColumnCount = Math.max(1, Math.min(layout.columns, objectiveQuestions.length || 1));
+  const columnQuestions = page.questions;
+  const visibleColumnCount = Math.max(1, Math.min(layout.columns, columnQuestions.length || 1));
   const balancedRows = Math.min(
     layout.rowsPerColumn,
-    Math.ceil(objectiveQuestions.length / visibleColumnCount),
+    Math.ceil(columnQuestions.length / visibleColumnCount),
   );
   const columns = Array.from({ length: visibleColumnCount }, (_, column) =>
-    objectiveQuestions.slice(column * balancedRows, (column + 1) * balancedRows),
+    columnQuestions.slice(column * balancedRows, (column + 1) * balancedRows),
   );
 
   return (
@@ -64,7 +64,7 @@ function AnswerSheetPage({
       <AlignmentMarkers />
 
       <div className={`answer-sheet-body ${hasNumericPanel ? "has-numeric-panel" : ""}`}>
-        {page.kind === "main" && objectiveQuestions.length > 0 ? (
+        {page.kind === "main" && columnQuestions.length > 0 ? (
           <div className="answer-sheet-objective-panel">
             <div
               className="answer-sheet-columns"
@@ -90,7 +90,7 @@ function AnswerSheetPage({
 
         {hasNumericPanel && (
           <aside
-            className={`answer-sheet-numeric-panel ${page.kind === "numeric" || objectiveQuestions.length === 0 ? "numeric-only" : ""}`}
+            className={`answer-sheet-numeric-panel ${page.kind === "numeric" || columnQuestions.length === 0 ? "numeric-only" : ""}`}
           >
             {page.numericQuestions.map((question) => (
               <NumericCard key={question.id} question={question} pageNumber={pageNumber} />
