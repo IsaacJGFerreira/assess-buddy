@@ -338,6 +338,7 @@ export type Database = {
           avaliacao_id: string
           conteudo: string | null
           created_at: string
+          desconto_erro: number
           gabarito: string | null
           id: string
           num_digitos: number | null
@@ -353,6 +354,7 @@ export type Database = {
           avaliacao_id: string
           conteudo?: string | null
           created_at?: string
+          desconto_erro?: number
           gabarito?: string | null
           id?: string
           num_digitos?: number | null
@@ -368,6 +370,7 @@ export type Database = {
           avaliacao_id?: string
           conteudo?: string | null
           created_at?: string
+          desconto_erro?: number
           gabarito?: string | null
           id?: string
           num_digitos?: number | null
