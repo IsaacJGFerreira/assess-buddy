@@ -38,6 +38,9 @@ export function restoreAnswerSheetModel(
       num_digitos: nullableNumber(question.numDigitos),
       gabarito: nullableString(question.gabarito),
       valor: Number.isFinite(Number(question.valor)) ? Number(question.valor) : 0,
+      desconto_erro: Number.isFinite(Number(question.descontoErro))
+        ? Number(question.descontoErro)
+        : 0,
       anulada: question.anulada === true,
       conteudo: nullableString(question.conteudo),
     };
