@@ -35,6 +35,7 @@ export function AnswerSheet({
   const digits = clampIdentifierDigits(identifierDigits);
   const matricula =
     identificationMode === "prefilled" ? formatMatriculaForSheet(aluno?.matricula, digits) : null;
+  const studentName = identificationMode === "prefilled" ? (aluno?.nome ?? null) : null;
 
   return (
     <div className="answer-sheet-document">
@@ -48,6 +49,7 @@ export function AnswerSheet({
           identificationMode={identificationMode}
           identifierDigits={digits}
           matricula={matricula}
+          studentName={studentName}
         />
       ))}
     </div>
@@ -61,6 +63,7 @@ function AnswerSheetPage({
   identificationMode,
   identifierDigits,
   matricula,
+  studentName,
 }: {
   layout: AnswerSheetLayout;
   page: AnswerSheetPageDescriptor;
@@ -69,6 +72,7 @@ function AnswerSheetPage({
   identificationMode: AnswerSheetIdentificationMode;
   identifierDigits: number;
   matricula: string | null;
+  studentName: string | null;
 }) {
   const isLandscape = layout.orientation === "landscape";
   const hasNumericPanel = page.numericQuestions.length > 0;
@@ -91,7 +95,12 @@ function AnswerSheetPage({
 
       <div className={`answer-sheet-body ${hasNumericPanel ? "has-numeric-panel" : ""}`}>
         {identificationMode !== "none" && (
-          <IdentifierCard digits={identifierDigits} matricula={matricula} pageNumber={pageNumber} />
+          <IdentifierCard
+            digits={identifierDigits}
+            matricula={matricula}
+            pageNumber={pageNumber}
+            studentName={studentName}
+          />
         )}
 
         {page.kind === "main" && columnQuestions.length > 0 ? (
