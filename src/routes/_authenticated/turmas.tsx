@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ClassFeedbackPanel } from "@/components/class-feedback-panel";
 import { toast } from "sonner";
 import { Loader2, Plus, Upload, Trash2 } from "lucide-react";
 import Papa from "papaparse";
@@ -13,6 +14,8 @@ import Papa from "papaparse";
 export const Route = createFileRoute("/_authenticated/turmas")({
   component: TurmasPage,
 });
+
+type StudentWithEmail = Aluno & { email: string | null };
 
 function TurmasPage() {
   const qc = useQueryClient();
@@ -146,7 +149,10 @@ function TurmasPage() {
 
         <div>
           {active ? (
-            <AlunosPanel turmaId={active} />
+            <div className="space-y-6">
+              <AlunosPanel turmaId={active} />
+              <ClassFeedbackPanel turmaId={active} />
+            </div>
           ) : (
             <div className="rounded-lg border border-dashed border-border p-12 text-center text-muted-foreground">
               Crie uma turma para adicionar alunos.
@@ -166,28 +172,61 @@ function AlunosPanel({ turmaId }: { turmaId: string }) {
   });
   const [nome, setNome] = useState("");
   const [matricula, setMatricula] = useState("");
+  const [email, setEmail] = useState("");
 
   const addAluno = useMutation({
     mutationFn: async () => {
       if (matricula && !/^\d+$/.test(matricula)) {
         throw new Error("A matrícula deve conter somente números.");
       }
+      if (email && !isValidEmail(email)) {
+        throw new Error("Informe um e-mail válido para o aluno.");
+      }
       const { data: u } = await supabase.auth.getUser();
-      const { error } = await supabase.from("alunos").insert({
-        nome: nome.trim(),
-        matricula: matricula || null,
-        turma_id: turmaId,
-        owner_id: u.user!.id,
-      });
+      const { error } = await supabase.from("alunos").insert(
+        {
+          nome: nome.trim(),
+          matricula: matricula || null,
+          email: email.trim().toLowerCase() || null,
+          turma_id: turmaId,
+          owner_id: u.user!.id,
+        } as never,
+      );
       if (error) throw error;
     },
     onSuccess: () => {
       setNome("");
       setMatricula("");
-      qc.invalidateQueries({ queryKey: ["alunos", turmaId] });
+      setEmail("");
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ["alunos", turmaId] }),
+        qc.invalidateQueries({ queryKey: ["feedback-students", turmaId] }),
+      ]);
       toast.success("Aluno adicionado");
     },
     onError: (e: Error) => toast.error(e.message),
+  });
+
+  const updateAlunoEmail = useMutation({
+    mutationFn: async ({ id, value }: { id: string; value: string }) => {
+      const normalized = value.trim().toLowerCase();
+      if (normalized && !isValidEmail(normalized)) {
+        throw new Error("Informe um e-mail válido.");
+      }
+      const { error } = await supabase
+        .from("alunos")
+        .update({ email: normalized || null } as never)
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["alunos", turmaId] }),
+        qc.invalidateQueries({ queryKey: ["feedback-students", turmaId] }),
+      ]);
+      toast.success("E-mail do aluno atualizado.");
+    },
+    onError: (error: Error) => toast.error(error.message),
   });
 
   const delAluno = useMutation({
@@ -195,7 +234,11 @@ function AlunosPanel({ turmaId }: { turmaId: string }) {
       const { error } = await supabase.from("alunos").delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["alunos", turmaId] }),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ["alunos", turmaId] }),
+        qc.invalidateQueries({ queryKey: ["feedback-students", turmaId] }),
+      ]),
   });
 
   async function handleCsv(e: React.ChangeEvent<HTMLInputElement>) {
@@ -206,13 +249,23 @@ function AlunosPanel({ turmaId }: { turmaId: string }) {
       skipEmptyLines: true,
       complete: async (res) => {
         const { data: u } = await supabase.auth.getUser();
-        const invalidRows = res.data.flatMap((row, index) => {
+        const invalidEnrollmentRows = res.data.flatMap((row, index) => {
           const value = csvMatricula(row);
           return value && !/^\d+$/.test(value) ? [index + 2] : [];
         });
-        if (invalidRows.length > 0) {
+        if (invalidEnrollmentRows.length > 0) {
           toast.error(
-            `Matrícula inválida nas linhas ${invalidRows.slice(0, 5).join(", ")}${invalidRows.length > 5 ? "…" : ""}. Use somente números.`,
+            `Matrícula inválida nas linhas ${invalidEnrollmentRows.slice(0, 5).join(", ")}${invalidEnrollmentRows.length > 5 ? "…" : ""}. Use somente números.`,
+          );
+          return;
+        }
+        const invalidEmailRows = res.data.flatMap((row, index) => {
+          const value = csvEmail(row);
+          return value && !isValidEmail(value) ? [index + 2] : [];
+        });
+        if (invalidEmailRows.length > 0) {
+          toast.error(
+            `E-mail inválido nas linhas ${invalidEmailRows.slice(0, 5).join(", ")}${invalidEmailRows.length > 5 ? "…" : ""}.`,
           );
           return;
         }
@@ -220,15 +273,19 @@ function AlunosPanel({ turmaId }: { turmaId: string }) {
           .map((r) => ({
             nome: r.nome || r.Nome || r.NOME,
             matricula: csvMatricula(r) || null,
+            email: csvEmail(r).toLowerCase() || null,
             turma_id: turmaId,
             owner_id: u.user!.id,
           }))
           .filter((r) => r.nome);
         if (!rows.length) return toast.error("Nenhuma linha válida (coluna 'nome' obrigatória).");
-        const { error } = await supabase.from("alunos").insert(rows);
+        const { error } = await supabase.from("alunos").insert(rows as never);
         if (error) toast.error(error.message);
         else toast.success(`${rows.length} alunos importados`);
-        qc.invalidateQueries({ queryKey: ["alunos", turmaId] });
+        await Promise.all([
+          qc.invalidateQueries({ queryKey: ["alunos", turmaId] }),
+          qc.invalidateQueries({ queryKey: ["feedback-students", turmaId] }),
+        ]);
       },
     });
     e.target.value = "";
@@ -246,14 +303,20 @@ function AlunosPanel({ turmaId }: { turmaId: string }) {
           </span>
         </label>
       </div>
-      <div className="p-4 border-b border-border grid gap-2 md:grid-cols-[1fr_160px_auto]">
+      <div className="p-4 border-b border-border grid gap-2 md:grid-cols-[1fr_150px_1fr_auto]">
         <Input placeholder="Nome do aluno" value={nome} onChange={(e) => setNome(e.target.value)} />
         <Input
-          placeholder="Matrícula numérica"
+          placeholder="Matrícula"
           inputMode="numeric"
           pattern="[0-9]*"
           value={matricula}
           onChange={(e) => setMatricula(e.target.value.replace(/\D/g, ""))}
+        />
+        <Input
+          type="email"
+          placeholder="E-mail do aluno"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
         />
         <Button disabled={!nome || addAluno.isPending} onClick={() => addAluno.mutate()}>
           <Plus className="h-4 w-4 mr-1" />
@@ -262,36 +325,69 @@ function AlunosPanel({ turmaId }: { turmaId: string }) {
       </div>
       {alunos.length === 0 ? (
         <p className="p-6 text-sm text-muted-foreground text-center">
-          Sem alunos ainda. Adicione um acima ou importe um CSV com a coluna <code>nome</code>.
+          Sem alunos ainda. Adicione um acima ou importe um CSV com as colunas <code>nome</code>, <code>matricula</code> e <code>email</code>.
         </p>
       ) : (
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-muted-foreground text-left">
-            <tr>
-              <th className="px-4 py-2 font-medium">Nome</th>
-              <th className="px-4 py-2 font-medium">Matrícula</th>
-              <th className="px-4 py-2 w-10"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {alunos.map((a: Aluno) => (
-              <tr key={a.id} className="border-t border-border">
-                <td className="px-4 py-2">{a.nome}</td>
-                <td className="px-4 py-2 text-muted-foreground">{a.matricula ?? "—"}</td>
-                <td className="px-4 py-2">
-                  <Button size="sm" variant="ghost" onClick={() => delAluno.mutate(a.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50 text-muted-foreground text-left">
+              <tr>
+                <th className="px-4 py-2 font-medium">Nome</th>
+                <th className="px-4 py-2 font-medium">Matrícula</th>
+                <th className="px-4 py-2 font-medium min-w-64">E-mail</th>
+                <th className="px-4 py-2 w-10"></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {alunos.map((a: Aluno) => {
+                const currentEmail = studentEmail(a);
+                return (
+                  <tr key={a.id} className="border-t border-border">
+                    <td className="px-4 py-2">{a.nome}</td>
+                    <td className="px-4 py-2 text-muted-foreground">{a.matricula ?? "—"}</td>
+                    <td className="px-4 py-2">
+                      <Input
+                        key={`${a.id}-${currentEmail ?? ""}`}
+                        type="email"
+                        defaultValue={currentEmail ?? ""}
+                        placeholder="aluno@email.com"
+                        aria-label={`E-mail de ${a.nome}`}
+                        onBlur={(event) => {
+                          const value = event.currentTarget.value.trim();
+                          if (value.toLowerCase() !== (currentEmail ?? "").toLowerCase()) {
+                            updateAlunoEmail.mutate({ id: a.id, value });
+                          }
+                        }}
+                      />
+                    </td>
+                    <td className="px-4 py-2">
+                      <Button size="sm" variant="ghost" onClick={() => delAluno.mutate(a.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
 }
 
+function studentEmail(student: Aluno): string | null {
+  return (student as StudentWithEmail).email ?? null;
+}
+
 function csvMatricula(row: Record<string, string>): string {
   return (row.matricula || row.Matricula || row.MATRICULA || "").trim();
+}
+
+function csvEmail(row: Record<string, string>): string {
+  return (row.email || row.Email || row.EMAIL || row.e_mail || "").trim();
+}
+
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
