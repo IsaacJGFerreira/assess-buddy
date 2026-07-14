@@ -1,71 +1,52 @@
-## Sistema de Folhas de Respostas — Plano de Construção
+# Devolutiva automática por e-mail
 
-Projeto grande. Proponho entregar em fases, começando pelo MVP descrito na seção 20 do briefing. Antes de codar, preciso alinhar alguns pontos.
+## O que será entregue
 
-### Perguntas de escopo
+1. **Campo de e-mail do aluno** no cadastro (Turmas → aluno).
+2. **Comentários por questão** que você escreve na avaliação, incluindo **orientação de correção** para questões discursivas (nota atribuída manualmente + feedback).
+3. **Geração automática de PDF** da devolutiva por aluno (mesmo layout da tela atual `/devolutiva/:alunoId`), incluindo os comentários.
+4. **Envio por e-mail** do PDF em anexo — um clique dispara para toda a turma (ou aluno individual). Usa a infraestrutura de e-mail gerenciada da Lovable (seu próprio domínio).
 
-1. **Autenticação e multiusuário**: o sistema é para um único professor (uso local) ou vários professores com login? Isso define se ativamos Lovable Cloud (banco + auth) desde já.
-2. **Persistência**: começo com Lovable Cloud (Postgres, recomendado para dados de alunos/avaliações/gabaritos) ou prefere protótipo em `localStorage` primeiro?
-3. **Escopo da Fase 1 (MVP)**: confirma que atacamos exatamente a seção 20 do briefing? (turmas/alunos, avaliações, MC + C/E + numérica 000–999, gabarito, PDF da folha, digitação manual, correção automática, relatórios individual/turma, folha de devolutiva).
+## Fluxo do usuário
 
-### Fase 1 — MVP (o que vou construir primeiro)
+```text
+Avaliação corrigida
+  → aba "Devolutiva"
+    → escrever comentário geral + comentário por questão
+    → para cada discursiva: nota manual (0–valor) + feedback
+    → botão "Enviar devolutivas por e-mail"
+      → gera PDF por aluno + envia
+      → mostra status (enviado / suprimido / sem e-mail / erro) por aluno
+```
 
-**Modelo de dados (Lovable Cloud / Postgres)**
-- `turmas` (nome, série, ano)
-- `alunos` (nome, matrícula, chamada, turma_id)
-- `avaliacoes` (título, disciplina, turma_id, data, valor_total, instruções, status, versões)
-- `questoes` (avaliacao_id, número, tipo [`mc`|`ce`|`num`], alternativas, gabarito, valor, anulada, conteúdo)
-- `respostas` (avaliacao_id, aluno_id, questao_id, resposta, situação, pontuação)
-- `versoes_prova` (avaliacao_id, código, mapa de embaralhamento)
+## Mudanças no banco
 
-**Telas (rotas TanStack Start)**
-- `/` painel: lista de avaliações com status, turma, média
-- `/turmas` e `/turmas/$id` (CRUD + import CSV de alunos)
-- `/avaliacoes/nova` wizard: dados gerais → questões → gabarito → revisão
-- `/avaliacoes/$id` visão geral com abas: Configuração · Gabarito · Folhas · Correção · Relatórios
-- `/avaliacoes/$id/folha` preview + geração de PDF (react-pdf ou impressão via `window.print` com CSS print)
-- `/avaliacoes/$id/corrigir/$alunoId` digitação manual com atalhos de teclado
-- `/avaliacoes/$id/relatorio` turma + drill-down por questão
-- `/avaliacoes/$id/devolutiva/$alunoId` folha de devolutiva imprimível
+- `alunos.email` (texto, opcional, validado).
+- `questoes.comentario` (texto, opcional) — comentário do professor exibido na devolutiva.
+- `respostas_alunos.nota_manual` (numérico, opcional) — usado para questões discursivas.
+- `respostas_alunos.feedback` (texto, opcional) — comentário específico para aquela resposta do aluno (útil em discursivas).
+- Nova tabela `envios_devolutiva` (aluno_id, avaliacao_id, email, status, erro, enviado_at) para histórico e evitar reenvios duplicados.
 
-**Funcionalidades principais Fase 1**
-- Construtor de questões (adicionar, duplicar, reordenar, excluir)
-- Validação: soma de valores = valor_total, todas com gabarito, sem lacunas de numeração
-- Geração de PDF com: cabeçalho institucional, identificação do aluno, bolhas MC/CE, colunas C/D/U para numéricas 000–999, versão da prova, código
-- Folha genérica OU personalizada por aluno
-- Correção automática (comparação com gabarito, tratamento de anuladas, dupla marcação, em branco)
-- Recalcular notas quando o gabarito muda + histórico de alterações
-- Relatórios: média/mediana/max/min, % acerto por questão, distribuição por alternativa, ranking de conteúdos difíceis
-- Devolutiva com símbolos ✓ ✕ — ! e espaço "Correção do aluno"
+O cálculo de nota passa a somar `nota_manual` quando a questão é `disc`.
 
-**Stack técnica**
-- TanStack Start (já configurado) + TanStack Query
-- Lovable Cloud (Postgres + Auth + RLS por professor)
-- shadcn/ui + Tailwind (design system limpo, focado em impressão)
-- `@react-pdf/renderer` para gerar PDFs das folhas e devolutivas
-- CSV import via `papaparse`
+## Configuração de e-mail
 
-**Design**
-- Interface do professor: densa, tabular, cores neutras, foco em produtividade (atalhos de teclado na correção)
-- Folha impressa: preto e branco puro, alto contraste, bolhas grandes, tipografia sóbria (Inter ou similar)
+- Requer domínio de e-mail configurado (Lovable Emails). Se ainda não estiver, abro o setup antes.
+- Um template React Email de devolutiva com identidade do app (assunto: "Sua devolutiva — {{titulo}}").
+- Envio server-side via `createServerFn` que: (a) verifica permissão, (b) gera o PDF no servidor a partir dos dados, (c) chama `sendTemplateEmail` com o PDF como link para download assinado do Storage (anexos não são suportados no envio gerenciado — o e-mail traz um link seguro com validade).
+- PDF armazenado num bucket privado `devolutivas` com URL assinada de 30 dias.
 
-### Fase 2 (depois do MVP validado)
-- Versões embaralhadas com mapeamento reverso
-- Múltiplas alternativas configuráveis (A–C, A–D, A–E, custom)
-- Certo/Errado no modelo CEBRASPE (erro anula acerto)
-- Questões discursivas e resposta curta (correção manual + nota parcial)
-- Bônus/anulada em massa, tolerância numérica, unidade de medida
-- QR Code por aluno (biblioteca `qrcode`)
-- Banco de modelos reutilizáveis
-- Modo "correção pelo aluno" em 3 etapas
-- Exportação CSV/planilha de resultados
-- Comentários e observações do professor por questão
+## Detalhes técnicos
 
-### Fase 3 (futuro)
-- Leitura automática por câmera / scanner (OMR)
-- Login para alunos verem sua devolutiva online
-- Comparação de desempenho entre avaliações
-- Integração com sistemas externos
+- Geração de PDF no servidor com `pdf-lib` + render simples do HTML → evita depender do navegador. Layout fiel ao print atual: cabeçalho, métricas, tabela questão-a-questão, comentários, seção "correção do aluno" para discursivas.
+- Server function `enviarDevolutivas({ avaliacaoId, alunoIds? })` roda em lote sequencial, respeitando rate limit (aguarda `retryAfterSeconds` em 429).
+- UI: nova aba/rota `_authenticated/avaliacoes.$id.devolutiva.tsx` (dashboard) — lista alunos, editor de comentários, botão de envio, tabela de status.
+- Cadastro de aluno (Turmas): input de e-mail com validação; exibido na lista.
 
-### O que preciso de você para começar
-Responda as 3 perguntas acima e eu começo pela Fase 1. Se quiser, já posso ativar o Lovable Cloud e montar o esqueleto (modelo de dados + navegação + tela de turmas) na primeira leva.
+## Fora de escopo
+
+- Envio recorrente / agendado.
+- Anexos binários no e-mail (Lovable Emails não suporta anexos — usamos link assinado).
+- Edição do PDF pelo usuário antes do envio (o PDF é gerado a partir dos dados salvos).
+
+Confirma? Se sim, começo pelo domínio de e-mail (se necessário) e sigo pelas migrações.
