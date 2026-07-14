@@ -1,11 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { StudentFeedbackEditor } from "@/components/class-feedback-panel";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_authenticated/avaliacoes/$id/devolutiva/$alunoId")({
-  component: DevolutivaPage,
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/devolutiva/$id/$alunoId",
+      params: { id: params.id, alunoId: params.alunoId },
+    });
+  },
 });
-
-function DevolutivaPage() {
-  const { id, alunoId } = Route.useParams();
-  return <StudentFeedbackEditor assessmentId={id} studentId={alunoId} />;
-}
