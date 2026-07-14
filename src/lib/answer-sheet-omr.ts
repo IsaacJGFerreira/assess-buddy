@@ -8,7 +8,7 @@ export type OmrMarkerCorner = "topLeft" | "topRight" | "bottomLeft" | "bottomRig
 export interface OmrBubbleTarget {
   questionId: string;
   questionNumber: number;
-  kind: "objective" | "numeric";
+  kind: "objective" | "numeric" | "identifier";
   value: string;
   digitIndex: number | null;
   x: number;
@@ -67,12 +67,26 @@ export interface OmrQuestionReading {
   samples: OmrBubbleSample[];
 }
 
+export interface OmrIdentifierReading {
+  questionId: "__matricula__";
+  questionNumber: 0;
+  kind: "identifier";
+  value: string | null;
+  status: OmrReadingStatus;
+  reviewReason: OmrReviewReason | null;
+  detectedValues: string[];
+  confidence: number;
+  requiresReview: boolean;
+  samples: OmrBubbleSample[];
+}
+
 export interface AnswerSheetOmrAnalysis {
   markers: Record<OmrMarkerCorner, OmrDetectedMarker>;
   threshold: number;
   markerConfidence: number;
   averageConfidence: number;
   readings: OmrQuestionReading[];
+  identifier: OmrIdentifierReading | null;
 }
 
 export class OmrAnalysisError extends Error {
@@ -126,7 +140,7 @@ export function collectAnswerSheetOmrGeometry(pageElement: HTMLElement): AnswerS
     if (
       !questionId ||
       value === undefined ||
-      (kind !== "objective" && kind !== "numeric") ||
+      (kind !== "objective" && kind !== "numeric" && kind !== "identifier") ||
       !Number.isFinite(questionNumber)
     ) {
       throw new OmrAnalysisError("Uma bolha da referência não possui identificação válida.");
@@ -205,13 +219,23 @@ export function analyzeAnswerSheetMarks(
   });
 
   const threshold = calculateMarkThreshold(samples.map((sample) => sample.score));
-  const readings = classifyQuestionReadings(samples, threshold);
+  const readings = classifyQuestionReadings(
+    samples.filter((sample) => sample.kind !== "identifier"),
+    threshold,
+  );
+  const identifierSamples = samples.filter((sample) => sample.kind === "identifier");
+  const identifier = identifierSamples.length
+    ? classifyIdentifier(identifierSamples, threshold)
+    : null;
   const markerConfidence = average(
     Object.values(markers).map((marker) => clamp((marker.score - 45) / 170, 0, 1)),
   );
-  const averageConfidence = average(readings.map((reading) => reading.confidence));
+  const averageConfidence = average([
+    ...readings.map((reading) => reading.confidence),
+    ...(identifier ? [identifier.confidence] : []),
+  ]);
 
-  return { markers, threshold, markerConfidence, averageConfidence, readings };
+  return { markers, threshold, markerConfidence, averageConfidence, readings, identifier };
 }
 
 function validateRaster(image: OmrRasterImage) {
@@ -535,7 +559,7 @@ function classifyQuestionReadings(
       return {
         questionId: first.questionId,
         questionNumber: first.questionNumber,
-        kind: first.kind,
+        kind: "objective" as const,
         value: classification.value,
         status: classification.status,
         reviewReason: classification.reviewReason,
@@ -615,6 +639,16 @@ function classifyNumericQuestion(
     confidence,
     requiresReview: true,
     samples,
+  };
+}
+
+function classifyIdentifier(samples: OmrBubbleSample[], threshold: number): OmrIdentifierReading {
+  const numeric = classifyNumericQuestion(samples, threshold);
+  return {
+    ...numeric,
+    questionId: "__matricula__",
+    questionNumber: 0,
+    kind: "identifier",
   };
 }
 

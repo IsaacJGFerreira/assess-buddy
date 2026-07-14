@@ -8,7 +8,7 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
-    "test:omr": "node --import tsx --test src/lib/answer-sheet-omr.test.ts",
+    "test:omr": "node --import tsx --test src/lib/answer-sheet-omr.test.ts src/lib/answer-sheet-identification.test.ts",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

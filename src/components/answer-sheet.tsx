@@ -1,6 +1,12 @@
 import { alternativas, type Aluno, type Avaliacao, type Questao } from "@/lib/domain";
 import type { AnswerSheetLayout } from "@/lib/answer-sheet-layout";
 import { buildAnswerSheetPages, type AnswerSheetPageDescriptor } from "@/lib/answer-sheet-pages";
+import {
+  clampIdentifierDigits,
+  DEFAULT_IDENTIFIER_DIGITS,
+  formatMatriculaForSheet,
+  type AnswerSheetIdentificationMode,
+} from "@/lib/answer-sheet-identification";
 
 interface AnswerSheetProps {
   avaliacao: Avaliacao;
@@ -8,6 +14,8 @@ interface AnswerSheetProps {
   aluno?: Aluno | null;
   layout: AnswerSheetLayout;
   identification?: AnswerSheetIdentification | null;
+  identificationMode?: AnswerSheetIdentificationMode;
+  identifierDigits?: number;
 }
 
 export interface AnswerSheetIdentification {
@@ -16,8 +24,17 @@ export interface AnswerSheetIdentification {
   qrPayload: string;
 }
 
-export function AnswerSheet({ questoes, layout }: AnswerSheetProps) {
+export function AnswerSheet({
+  questoes,
+  aluno,
+  layout,
+  identificationMode = "none",
+  identifierDigits = DEFAULT_IDENTIFIER_DIGITS,
+}: AnswerSheetProps) {
   const pages = buildAnswerSheetPages(questoes, layout);
+  const digits = clampIdentifierDigits(identifierDigits);
+  const matricula =
+    identificationMode === "prefilled" ? formatMatriculaForSheet(aluno?.matricula, digits) : null;
 
   return (
     <div className="answer-sheet-document">
@@ -28,6 +45,9 @@ export function AnswerSheet({ questoes, layout }: AnswerSheetProps) {
           page={page}
           pageNumber={index + 1}
           pageCount={pages.length}
+          identificationMode={identificationMode}
+          identifierDigits={digits}
+          matricula={matricula}
         />
       ))}
     </div>
@@ -38,11 +58,17 @@ function AnswerSheetPage({
   layout,
   page,
   pageNumber,
+  identificationMode,
+  identifierDigits,
+  matricula,
 }: {
   layout: AnswerSheetLayout;
   page: AnswerSheetPageDescriptor;
   pageNumber: number;
   pageCount: number;
+  identificationMode: AnswerSheetIdentificationMode;
+  identifierDigits: number;
+  matricula: string | null;
 }) {
   const isLandscape = layout.orientation === "landscape";
   const hasNumericPanel = page.numericQuestions.length > 0;
@@ -64,6 +90,10 @@ function AnswerSheetPage({
       <AlignmentMarkers />
 
       <div className={`answer-sheet-body ${hasNumericPanel ? "has-numeric-panel" : ""}`}>
+        {identificationMode !== "none" && (
+          <IdentifierCard digits={identifierDigits} matricula={matricula} pageNumber={pageNumber} />
+        )}
+
         {page.kind === "main" && columnQuestions.length > 0 ? (
           <div className="answer-sheet-objective-panel">
             <div
@@ -178,33 +208,79 @@ function NumericCard({ question, pageNumber }: { question: Questao; pageNumber: 
   );
 }
 
+function IdentifierCard({
+  digits,
+  matricula,
+  pageNumber,
+}: {
+  digits: number;
+  matricula: string | null;
+  pageNumber: number;
+}) {
+  return (
+    <aside className="answer-sheet-identifier-card" aria-label="Matrícula">
+      <div className="answer-sheet-identifier-title">Matrícula</div>
+      <div className="answer-sheet-identifier-grid">
+        {Array.from({ length: digits }, (_, digitIndex) => (
+          <div className="answer-sheet-numeric-column" key={digitIndex}>
+            <strong>{digitIndex + 1}</strong>
+            {Array.from({ length: 10 }, (_, digit) => (
+              <Bubble
+                key={digit}
+                label={String(digit)}
+                dense
+                pageNumber={pageNumber}
+                questionId="__matricula__"
+                questionNumber={0}
+                value={String(digit)}
+                kind="identifier"
+                digitIndex={digitIndex}
+                filled={matricula?.[digitIndex] === String(digit)}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
 function Bubble({
   label,
   dense = false,
   pageNumber,
   question,
+  questionId,
+  questionNumber,
   value,
   kind,
   digitIndex,
+  filled = false,
 }: {
   label: string;
   dense?: boolean;
   pageNumber: number;
-  question: Questao;
+  question?: Questao;
+  questionId?: string;
+  questionNumber?: number;
   value: string;
-  kind: "objective" | "numeric";
+  kind: "objective" | "numeric" | "identifier";
   digitIndex?: number;
+  filled?: boolean;
 }) {
+  const resolvedQuestionId = question?.id ?? questionId;
+  const resolvedQuestionNumber = question?.numero ?? questionNumber;
   return (
     <span
-      className={`answer-sheet-bubble ${dense ? "is-dense" : ""}`}
+      className={`answer-sheet-bubble ${dense ? "is-dense" : ""} ${filled ? "is-prefilled" : ""}`}
       data-omr-bubble="true"
       data-omr-page={pageNumber}
-      data-omr-question-id={question.id}
-      data-omr-question-number={question.numero}
+      data-omr-question-id={resolvedQuestionId}
+      data-omr-question-number={resolvedQuestionNumber}
       data-omr-kind={kind}
       data-omr-value={value}
       data-omr-digit-index={digitIndex}
+      data-omr-prefilled={filled || undefined}
     >
       {label}
     </span>

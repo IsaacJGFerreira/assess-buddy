@@ -65,6 +65,23 @@ test("flags a partially filled numeric response as incomplete", () => {
   assert.equal(reading?.reviewReason, "incomplete");
 });
 
+test("reads the matrícula separately from the assessment answers", () => {
+  const image = createSyntheticSheet([
+    ["__matricula__", 0, "4"],
+    ["__matricula__", 1, "2"],
+    ["q1", null, "C"],
+  ]);
+  const analysis = analyzeAnswerSheetMarks(image, geometry);
+
+  assert.equal(analysis.identifier?.value, "42");
+  assert.equal(analysis.identifier?.status, "confident");
+  assert.equal(analysis.readings.length, 3);
+  assert.equal(
+    analysis.readings.some((reading) => reading.questionId === "__matricula__"),
+    false,
+  );
+});
+
 test("reads a centered A4 portrait sheet with ten questions and wide side margins", () => {
   const portraitGeometry = buildPortraitGeometry();
   const portraitCorners = {
@@ -125,6 +142,21 @@ function buildGeometry(): AnswerSheetOmrGeometry {
           String(digit),
           digitIndex,
           0.62 + digitIndex * 0.07,
+          0.22 + digit * 0.055,
+        ),
+      );
+    }
+  }
+  for (let digitIndex = 0; digitIndex < 2; digitIndex += 1) {
+    for (let digit = 0; digit < 10; digit += 1) {
+      bubbles.push(
+        makeBubble(
+          "__matricula__",
+          0,
+          "identifier",
+          String(digit),
+          digitIndex,
+          0.8 + digitIndex * 0.06,
           0.22 + digit * 0.055,
         ),
       );
@@ -194,7 +226,7 @@ function makePortraitBubble(
 function makeBubble(
   questionId: string,
   questionNumber: number,
-  kind: "objective" | "numeric",
+  kind: "objective" | "numeric" | "identifier",
   value: string,
   digitIndex: number | null,
   x: number,

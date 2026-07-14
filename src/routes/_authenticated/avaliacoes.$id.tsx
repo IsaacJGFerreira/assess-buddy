@@ -62,6 +62,11 @@ import {
   type AnswerSheetLayout,
   type AnswerSheetOrientation,
 } from "@/lib/answer-sheet-layout";
+import {
+  determineIdentifierDigits,
+  isStudentEligibleForPrefilledSheet,
+  type AnswerSheetIdentificationMode,
+} from "@/lib/answer-sheet-identification";
 
 export const Route = createFileRoute("/_authenticated/avaliacoes/$id")({
   component: AvaliacaoDetail,
@@ -648,14 +653,33 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
   const [rowsOverride, setRowsOverride] = useState<number | null>(
     DEFAULT_ANSWER_SHEET_LAYOUT.rowsPerColumn,
   );
+  const [identificationMode, setIdentificationMode] =
+    useState<AnswerSheetIdentificationMode>("none");
+  const [selectedStudentId, setSelectedStudentId] = useState("");
   const [preview, setPreview] = useState<{
     identification: IdentificacaoFolhaResposta | null;
+    identificationMode: AnswerSheetIdentificationMode;
+    identifierDigits: number;
+    aluno: Aluno | null;
     persistenceUnavailable?: boolean;
   } | null>(null);
   const savedModel = useQuery({
     queryKey: ["modelo-folha", avaliacao.id],
     queryFn: () => getLatestAnswerSheetModel(avaliacao.id),
   });
+  const students = useQuery({
+    queryKey: ["alunos", avaliacao.turma_id ?? ""],
+    queryFn: () =>
+      avaliacao.turma_id ? listAlunosByTurma(avaliacao.turma_id) : Promise.resolve([]),
+    enabled: Boolean(avaliacao.turma_id),
+  });
+  const identifierDigits = determineIdentifierDigits(students.data ?? []);
+  const eligibleStudents = (students.data ?? []).filter((student) =>
+    isStudentEligibleForPrefilledSheet(student, identifierDigits),
+  );
+  const effectiveStudentId = selectedStudentId || eligibleStudents[0]?.id || "";
+  const selectedStudent =
+    eligibleStudents.find((student) => student.id === effectiveStudentId) ?? null;
   const orientation =
     orientationOverride ?? savedModel.data?.orientacao ?? DEFAULT_ANSWER_SHEET_LAYOUT.orientation;
   const maxColumns = orientation === "portrait" ? 4 : 6;
@@ -676,21 +700,36 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
     orientation: sheetSearch.orientacao,
   };
   const generateSheet = useMutation({
-    mutationFn: () =>
-      createOrGetAnswerSheet({
+    mutationFn: () => {
+      if (identificationMode === "prefilled" && !selectedStudent) {
+        throw new Error("Selecione um aluno com matrícula numérica para gerar esta folha.");
+      }
+      return createOrGetAnswerSheet({
         avaliacao,
         questoes,
+        alunoId: identificationMode === "prefilled" ? selectedStudent?.id : undefined,
         layout,
-      }),
+        identificationMode,
+        identifierDigits,
+      });
+    },
     onSuccess: (identification) => {
       void queryClient.invalidateQueries({ queryKey: ["modelo-folha", avaliacao.id] });
-      setPreview({ identification });
+      setPreview({
+        identification,
+        identificationMode,
+        identifierDigits,
+        aluno: identificationMode === "prefilled" ? selectedStudent : null,
+      });
       toast.success(`Folha ${identification.codigo} · versão ${identification.versao}.`);
     },
     onError: (error: Error) => {
       if (isAnswerSheetPersistenceUnavailable(error)) {
         setPreview({
           identification: null,
+          identificationMode,
+          identifierDigits,
+          aluno: identificationMode === "prefilled" ? selectedStudent : null,
           persistenceUnavailable: true,
         });
         toast.warning("Prévia aberta. O banco ainda precisa receber a atualização das folhas.");
@@ -721,6 +760,9 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
         questoes={questoes}
         layout={layout}
         identification={preview.identification}
+        identificationMode={preview.identificationMode}
+        identifierDigits={preview.identifierDigits}
+        aluno={preview.aluno}
         persistenceUnavailable={preview.persistenceUnavailable}
         onBack={() => setPreview(null)}
       />
@@ -752,7 +794,14 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
           ) : (
             <div className="answer-sheet-inline-viewport max-h-[78vh] max-w-full overflow-auto">
               <div className="answer-sheet-export-root">
-                <AnswerSheet avaliacao={avaliacao} questoes={questoes} layout={layout} />
+                <AnswerSheet
+                  avaliacao={avaliacao}
+                  questoes={questoes}
+                  aluno={identificationMode === "prefilled" ? selectedStudent : null}
+                  layout={layout}
+                  identificationMode={identificationMode}
+                  identifierDigits={identifierDigits}
+                />
               </div>
             </div>
           )}
@@ -773,6 +822,73 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
             </div>
 
             <div className="mt-4 space-y-4">
+              <fieldset className="space-y-2">
+                <legend className="text-sm font-medium">Identificação</legend>
+                <div className="grid gap-2">
+                  {(
+                    [
+                      ["none", "Sem identificação", "Somente os itens e as respostas."],
+                      ["blank", "Matrícula para preencher", "O aluno marca a própria matrícula."],
+                      [
+                        "prefilled",
+                        "Matrícula já preenchida",
+                        "Gera uma folha individual com a matrícula marcada.",
+                      ],
+                    ] as const
+                  ).map(([value, label, description]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setIdentificationMode(value)}
+                      className={`rounded-md border px-3 py-2 text-left transition ${identificationMode === value ? "border-primary bg-primary/10" : "border-border hover:bg-muted/50"}`}
+                      aria-pressed={identificationMode === value}
+                    >
+                      <span className="block text-sm font-medium">{label}</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        {description}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+
+              {identificationMode !== "none" && (
+                <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                  Campo de matrícula com {identifierDigits} dígitos, calculado pelas matrículas da
+                  turma.
+                </div>
+              )}
+
+              {identificationMode === "prefilled" && (
+                <div className="space-y-1.5">
+                  <Label>Aluno da folha</Label>
+                  <Select value={effectiveStudentId} onValueChange={setSelectedStudentId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o aluno" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {eligibleStudents.map((student) => (
+                        <SelectItem key={student.id} value={student.id}>
+                          {student.chamada ? `${student.chamada}. ` : ""}
+                          {student.nome} · {student.matricula}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {students.isLoading ? (
+                    <p className="text-xs text-muted-foreground">Carregando alunos…</p>
+                  ) : eligibleStudents.length === 0 ? (
+                    <p className="text-xs font-medium text-amber-700">
+                      Nenhum aluno possui matrícula numérica compatível.
+                    </p>
+                  ) : eligibleStudents.length < (students.data?.length ?? 0) ? (
+                    <p className="text-xs text-amber-700">
+                      Alunos com matrícula alfanumérica não aparecem nesta lista.
+                    </p>
+                  ) : null}
+                </div>
+              )}
+
               <fieldset className="space-y-2">
                 <legend className="text-sm font-medium">Distribuição</legend>
                 <div className="grid grid-cols-2 gap-2">
@@ -855,7 +971,12 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
               type="button"
               className="mt-4 w-full"
               onClick={() => generateSheet.mutate()}
-              disabled={generateSheet.isPending || savedModel.isLoading || questoes.length === 0}
+              disabled={
+                generateSheet.isPending ||
+                savedModel.isLoading ||
+                questoes.length === 0 ||
+                (identificationMode === "prefilled" && !selectedStudent)
+              }
             >
               {generateSheet.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -877,6 +998,8 @@ function EmbeddedAnswerSheetPreview({
   aluno,
   layout,
   identification,
+  identificationMode,
+  identifierDigits,
   persistenceUnavailable = false,
   onBack,
 }: {
@@ -885,6 +1008,8 @@ function EmbeddedAnswerSheetPreview({
   aluno?: Aluno | null;
   layout: AnswerSheetLayout;
   identification: IdentificacaoFolhaResposta | null;
+  identificationMode: AnswerSheetIdentificationMode;
+  identifierDigits: number;
   persistenceUnavailable?: boolean;
   onBack: () => void;
 }) {
@@ -1024,6 +1149,8 @@ function EmbeddedAnswerSheetPreview({
               questoes={questoes}
               aluno={aluno}
               layout={layout}
+              identificationMode={identificationMode}
+              identifierDigits={identifierDigits}
               identification={
                 identification
                   ? {
