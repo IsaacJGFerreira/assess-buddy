@@ -514,7 +514,7 @@ export type Database = {
         | "em_correcao"
         | "corrigida"
         | "devolvida"
-      tipo_questao: "mc" | "ce" | "num"
+      tipo_questao: "mc" | "ce" | "num" | "disc"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -650,7 +650,7 @@ export const Constants = {
         "corrigida",
         "devolvida",
       ],
-      tipo_questao: ["mc", "ce", "num"],
+      tipo_questao: ["mc", "ce", "num", "disc"],
     },
   },
 } as const
