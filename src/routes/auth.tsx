@@ -55,7 +55,7 @@ function AuthPage() {
   async function handleGoogle() {
     markGmailSetupAfterGoogleLogin();
     const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
+      redirect_uri: `${window.location.origin}/painel`,
     });
     if (result.error) {
       clearGmailSetupAfterGoogleLogin();
