@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { clearGmailSetupAfterGoogleLogin, markGmailSetupAfterGoogleLogin } from "@/lib/gmail-sender";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/auth")({
@@ -52,10 +53,14 @@ function AuthPage() {
   }
 
   async function handleGoogle() {
+    markGmailSetupAfterGoogleLogin();
     const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
+      redirect_uri: `${window.location.origin}/painel`,
     });
-    if (result.error) return toast.error(result.error.message ?? "Falha no login");
+    if (result.error) {
+      clearGmailSetupAfterGoogleLogin();
+      return toast.error(result.error.message ?? "Falha no login");
+    }
     if (result.redirected) return;
     navigate({ to: "/painel" });
   }
@@ -68,6 +73,17 @@ function AuthPage() {
           <span className="font-semibold tracking-tight">Folha</span>
         </Link>
         <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
+          <Button type="button" variant="outline" className="w-full" onClick={handleGoogle}>
+            Continuar com Google
+          </Button>
+          <p className="mt-2 text-center text-xs text-muted-foreground">
+            No primeiro acesso, o Google solicitará uma única autorização para enviar devolutivas pelo Gmail do professor.
+          </p>
+
+          <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
+            <div className="h-px flex-1 bg-border" /> acesso alternativo <div className="h-px flex-1 bg-border" />
+          </div>
+
           <Tabs defaultValue="signin">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="signin">Entrar</TabsTrigger>
@@ -89,12 +105,6 @@ function AuthPage() {
               </form>
             </TabsContent>
           </Tabs>
-          <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
-            <div className="h-px flex-1 bg-border" /> ou <div className="h-px flex-1 bg-border" />
-          </div>
-          <Button type="button" variant="outline" className="w-full" onClick={handleGoogle}>
-            Continuar com Google
-          </Button>
         </div>
       </div>
     </div>

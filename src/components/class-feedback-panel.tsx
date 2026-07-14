@@ -3,10 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowLeft,
-  CheckCircle2,
   Download,
   ImagePlus,
-  Link2,
   Loader2,
   Mail,
   Save,
@@ -28,7 +26,6 @@ import {
 } from "@/lib/devolutiva-pdf";
 import {
   connectGmail,
-  disconnectGmail,
   isGmailConnectionValid,
   sendPdfWithGmail,
   type GmailConnection,
@@ -139,6 +136,22 @@ export function StudentFeedbackEditor({
     () => calculateFeedbackScore(questions, mergeDrafts(responses, studentId, drafts)),
     [questions, responses, studentId, drafts],
   );
+
+  useEffect(() => {
+    const expectedEmail = userQuery.data?.email;
+    if (!expectedEmail || gmail) return;
+    let cancelled = false;
+    void connectGmail({ expectedEmail, returnUrl: window.location.href })
+      .then((connection) => {
+        if (!cancelled) setGmail(connection);
+      })
+      .catch((error) => {
+        if (!cancelled) toast.error(message(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userQuery.data?.email, gmail]);
 
   useEffect(() => {
     const byQuestion = new Map(responses.map((response) => [response.questao_id, response]));
@@ -307,25 +320,6 @@ export function StudentFeedbackEditor({
     setDirty(true);
   }
 
-  async function connect() {
-    const expectedEmail = userQuery.data?.email;
-    if (!expectedEmail) return toast.error("A conta do sistema não possui um e-mail válido.");
-    try {
-      const clientId =
-        (import.meta.env as { VITE_GOOGLE_GMAIL_CLIENT_ID?: string }).VITE_GOOGLE_GMAIL_CLIENT_ID ?? "";
-      const connection = await connectGmail({ clientId, expectedEmail });
-      setGmail(connection);
-      toast.success(`Gmail conectado: ${connection.email}`);
-    } catch (error) {
-      toast.error(message(error));
-    }
-  }
-
-  function disconnect() {
-    disconnectGmail(gmail);
-    setGmail(null);
-  }
-
   async function buildPdf() {
     if (!assessment || !student || !userQuery.data?.email) {
       throw new Error("Não foi possível carregar os dados da devolutiva.");
@@ -361,11 +355,7 @@ export function StudentFeedbackEditor({
 
   async function send() {
     if (!student?.email?.trim()) return toast.error("Cadastre o e-mail deste aluno em Turmas e alunos.");
-    if (!assessment || !userQuery.data?.email) return;
-    if (!isGmailConnectionValid(gmail)) {
-      setGmail(null);
-      return toast.error("Conecte o Gmail do mesmo e-mail usado no sistema.");
-    }
+    if (!assessment || !userQuery.data?.email || !gmail) return;
     setSending(true);
     try {
       const pdf = await buildPdf();
@@ -414,16 +404,13 @@ export function StudentFeedbackEditor({
             </p>
           </div>
           {isGmailConnectionValid(gmail) ? (
-            <div className="flex gap-2">
-              <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                <CheckCircle2 className="mr-2 h-4 w-4" /> {gmail.email}
-              </span>
-              <Button type="button" variant="outline" onClick={disconnect}>Desconectar</Button>
-            </div>
+            <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              <Mail className="mr-2 h-4 w-4" /> Envio pelo Gmail de {gmail.email}
+            </span>
           ) : (
-            <Button type="button" variant="outline" onClick={() => void connect()}>
-              <Link2 className="mr-2 h-4 w-4" /> Conectar Gmail
-            </Button>
+            <span className="inline-flex items-center rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Preparando o Gmail do professor…
+            </span>
           )}
         </div>
 
@@ -602,7 +589,7 @@ export function StudentFeedbackEditor({
             onClick={() => void send()}
           >
             {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-            Enviar por e-mail
+            Enviar devolutiva
           </Button>
         </div>
       </div>
