@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           chamada: number | null
           created_at: string
+          email: string | null
           id: string
           matricula: string | null
           nome: string
@@ -28,6 +29,7 @@ export type Database = {
         Insert: {
           chamada?: number | null
           created_at?: string
+          email?: string | null
           id?: string
           matricula?: string | null
           nome: string
@@ -38,6 +40,7 @@ export type Database = {
         Update: {
           chamada?: number | null
           created_at?: string
+          email?: string | null
           id?: string
           matricula?: string | null
           nome?: string
@@ -57,6 +60,7 @@ export type Database = {
       }
       avaliacoes: {
         Row: {
+          comentario_devolutiva: string | null
           created_at: string
           data_aplicacao: string | null
           disciplina: string | null
@@ -70,6 +74,7 @@ export type Database = {
           valor_total: number
         }
         Insert: {
+          comentario_devolutiva?: string | null
           created_at?: string
           data_aplicacao?: string | null
           disciplina?: string | null
@@ -83,6 +88,7 @@ export type Database = {
           valor_total?: number
         }
         Update: {
+          comentario_devolutiva?: string | null
           created_at?: string
           data_aplicacao?: string | null
           disciplina?: string | null
@@ -264,6 +270,63 @@ export type Database = {
           },
         ]
       }
+      gmail_connections: {
+        Row: {
+          created_at: string
+          google_email: string
+          refresh_token_ciphertext: string
+          refresh_token_iv: string
+          scopes: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          google_email: string
+          refresh_token_ciphertext: string
+          refresh_token_iv: string
+          scopes?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          google_email?: string
+          refresh_token_ciphertext?: string
+          refresh_token_iv?: string
+          scopes?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      gmail_oauth_states: {
+        Row: {
+          created_at: string
+          expected_email: string
+          expires_at: string
+          return_url: string
+          state_hash: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expected_email: string
+          expires_at: string
+          return_url: string
+          state_hash: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expected_email?: string
+          expires_at?: string
+          return_url?: string
+          state_hash?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       modelos_folha_respostas: {
         Row: {
           avaliacao_id: string
@@ -343,8 +406,11 @@ export type Database = {
           id: string
           num_digitos: number | null
           numero: number
+          orientacao_correcao: string | null
           owner_id: string
           qtd_alternativas: number | null
+          resposta_modelo: string | null
+          resposta_modelo_imagem_path: string | null
           tipo: Database["public"]["Enums"]["tipo_questao"]
           updated_at: string
           valor: number
@@ -359,8 +425,11 @@ export type Database = {
           id?: string
           num_digitos?: number | null
           numero: number
+          orientacao_correcao?: string | null
           owner_id: string
           qtd_alternativas?: number | null
+          resposta_modelo?: string | null
+          resposta_modelo_imagem_path?: string | null
           tipo: Database["public"]["Enums"]["tipo_questao"]
           updated_at?: string
           valor?: number
@@ -375,8 +444,11 @@ export type Database = {
           id?: string
           num_digitos?: number | null
           numero?: number
+          orientacao_correcao?: string | null
           owner_id?: string
           qtd_alternativas?: number | null
+          resposta_modelo?: string | null
+          resposta_modelo_imagem_path?: string | null
           tipo?: Database["public"]["Enums"]["tipo_questao"]
           updated_at?: string
           valor?: number
@@ -396,7 +468,9 @@ export type Database = {
           aluno_id: string
           avaliacao_id: string
           created_at: string
+          feedback: string | null
           id: string
+          nota_manual: number | null
           owner_id: string
           questao_id: string
           resposta: string | null
@@ -406,7 +480,9 @@ export type Database = {
           aluno_id: string
           avaliacao_id: string
           created_at?: string
+          feedback?: string | null
           id?: string
+          nota_manual?: number | null
           owner_id: string
           questao_id: string
           resposta?: string | null
@@ -416,7 +492,9 @@ export type Database = {
           aluno_id?: string
           avaliacao_id?: string
           created_at?: string
+          feedback?: string | null
           id?: string
+          nota_manual?: number | null
           owner_id?: string
           questao_id?: string
           resposta?: string | null
