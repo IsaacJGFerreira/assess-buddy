@@ -1,0 +1,12 @@
+serviceId: assess-buddy
+location: southamerica-east1
+schema:
+  source: ./schema
+  datasource:
+    postgresql:
+      database: assess-buddy-database
+      cloudSql:
+        instanceId: assess-buddy-instance
+        schemaValidation: STRICT
+connectorDirs:
+  - ./app
