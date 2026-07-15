@@ -1,0 +1,151 @@
+query ListarMinhasQuestoes($avaliacaoId: UUID!) @auth(level: USER) {
+  questoes(
+    where: {
+      avaliacaoId: { eq: $avaliacaoId }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+    orderBy: [{ numero: ASC }]
+  ) {
+    id
+    avaliacaoId
+    numero
+    tipo
+    qtdAlternativas
+    numDigitos
+    gabarito
+    valor
+    descontoErro
+    anulada
+    conteudo
+    orientacaoCorrecao
+    respostaModelo
+    respostaModeloImagemPath
+    createdAt
+    updatedAt
+  }
+}
+
+query ObterMinhaQuestao($id: UUID!) @auth(level: USER) {
+  questoes(
+    where: {
+      id: { eq: $id }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+    limit: 1
+  ) {
+    id
+    avaliacaoId
+    numero
+    tipo
+    qtdAlternativas
+    numDigitos
+    gabarito
+    valor
+    descontoErro
+    anulada
+    conteudo
+    orientacaoCorrecao
+    respostaModelo
+    respostaModeloImagemPath
+    createdAt
+    updatedAt
+  }
+}
+
+mutation CriarQuestao(
+  $avaliacaoId: UUID!
+  $numero: Int!
+  $tipo: TipoQuestao!
+  $qtdAlternativas: Int
+  $numDigitos: Int
+  $gabarito: String
+  $valor: Float!
+  $descontoErro: Float!
+  $anulada: Boolean!
+  $conteudo: String
+  $orientacaoCorrecao: String
+  $respostaModelo: String
+  $respostaModeloImagemPath: String
+) @auth(level: USER) @transaction {
+  query @redact {
+    avaliacoes(
+      where: {
+        id: { eq: $avaliacaoId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(expr: "this.size() == 1", message: "Avaliação não encontrada.") {
+      id
+    }
+  }
+
+  questao_insert(
+    data: {
+      ownerUid_expr: "auth.uid"
+      avaliacaoId: $avaliacaoId
+      numero: $numero
+      tipo: $tipo
+      qtdAlternativas: $qtdAlternativas
+      numDigitos: $numDigitos
+      gabarito: $gabarito
+      valor: $valor
+      descontoErro: $descontoErro
+      anulada: $anulada
+      conteudo: $conteudo
+      orientacaoCorrecao: $orientacaoCorrecao
+      respostaModelo: $respostaModelo
+      respostaModeloImagemPath: $respostaModeloImagemPath
+    }
+  )
+}
+
+mutation AtualizarQuestao(
+  $id: UUID!
+  $numero: Int!
+  $tipo: TipoQuestao!
+  $qtdAlternativas: Int
+  $numDigitos: Int
+  $gabarito: String
+  $valor: Float!
+  $descontoErro: Float!
+  $anulada: Boolean!
+  $conteudo: String
+  $orientacaoCorrecao: String
+  $respostaModelo: String
+  $respostaModeloImagemPath: String
+) @auth(level: USER) @transaction {
+  questao_update(
+    first: {
+      where: {
+        id: { eq: $id }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+    }
+    data: {
+      numero: $numero
+      tipo: $tipo
+      qtdAlternativas: $qtdAlternativas
+      numDigitos: $numDigitos
+      gabarito: $gabarito
+      valor: $valor
+      descontoErro: $descontoErro
+      anulada: $anulada
+      conteudo: $conteudo
+      orientacaoCorrecao: $orientacaoCorrecao
+      respostaModelo: $respostaModelo
+      respostaModeloImagemPath: $respostaModeloImagemPath
+      updatedAt_expr: "request.time"
+    }
+  ) @check(expr: "this != null", message: "Questão não encontrada.")
+}
+
+mutation ExcluirQuestao($id: UUID!) @auth(level: USER) @transaction {
+  questao_delete(
+    first: {
+      where: {
+        id: { eq: $id }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+    }
+  ) @check(expr: "this != null", message: "Questão não encontrada.")
+}
