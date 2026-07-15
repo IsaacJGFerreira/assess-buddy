@@ -1,0 +1,220 @@
+enum TipoQuestao {
+  MULTIPLA_ESCOLHA
+  CERTO_ERRADO
+  NUMERICA
+  DISCURSIVA
+}
+
+enum StatusAvaliacao {
+  ELABORACAO
+  PRONTA
+  APLICADA
+  EM_CORRECAO
+  CORRIGIDA
+  DEVOLVIDA
+}
+
+enum OrientacaoFolha {
+  RETRATO
+  PAISAGEM
+}
+
+enum StatusDigitalizacao {
+  PREPARADA
+  IDENTIFICADA
+  REVISAO
+  PROCESSADA
+  ERRO
+}
+
+enum StatusEnvioDevolutiva {
+  PENDENTE
+  ENVIADA
+  ERRO
+}
+
+type Professor @table(key: "uid") {
+  uid: String! @default(expr: "auth.uid")
+  nome: String
+  email: String
+  escola: String
+  createdAt: Timestamp! @default(expr: "request.time")
+  updatedAt: Timestamp! @default(expr: "request.time")
+}
+
+type Turma @table(key: "id") {
+  id: UUID! @default(expr: "uuidV4()")
+  ownerUid: String! @default(expr: "auth.uid")
+  owner: Professor! @ref(fields: "ownerUid", references: "uid")
+  nome: String!
+  serie: String
+  ano: Int
+  createdAt: Timestamp! @default(expr: "request.time")
+  updatedAt: Timestamp! @default(expr: "request.time")
+}
+
+type Aluno @table(key: "id") {
+  id: UUID! @default(expr: "uuidV4()")
+  ownerUid: String! @default(expr: "auth.uid")
+  owner: Professor! @ref(fields: "ownerUid", references: "uid")
+  turmaId: UUID!
+  turma: Turma! @ref(fields: "turmaId", references: "id")
+  nome: String!
+  matricula: String
+  chamada: Int
+  email: String
+  createdAt: Timestamp! @default(expr: "request.time")
+  updatedAt: Timestamp! @default(expr: "request.time")
+}
+
+type Avaliacao @table(key: "id") {
+  id: UUID! @default(expr: "uuidV4()")
+  ownerUid: String! @default(expr: "auth.uid")
+  owner: Professor! @ref(fields: "ownerUid", references: "uid")
+  turmaId: UUID
+  turma: Turma @ref(fields: "turmaId", references: "id")
+  titulo: String!
+  disciplina: String
+  dataAplicacao: Date
+  valorTotal: Float! @col(dataType: "numeric(8,2)") @default(value: 10)
+  instrucoes: String
+  comentarioDevolutiva: String
+  status: StatusAvaliacao! @default(value: ELABORACAO)
+  createdAt: Timestamp! @default(expr: "request.time")
+  updatedAt: Timestamp! @default(expr: "request.time")
+}
+
+type Questao
+  @table(key: "id")
+  @unique(fields: ["avaliacaoId", "numero"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  ownerUid: String! @default(expr: "auth.uid")
+  owner: Professor! @ref(fields: "ownerUid", references: "uid")
+  avaliacaoId: UUID!
+  avaliacao: Avaliacao! @ref(fields: "avaliacaoId", references: "id")
+  numero: Int!
+  tipo: TipoQuestao!
+  qtdAlternativas: Int
+  numDigitos: Int
+  gabarito: String
+  valor: Float! @col(dataType: "numeric(8,2)") @default(value: 1)
+  descontoErro: Float! @col(dataType: "numeric(8,2)") @default(value: 0)
+  anulada: Boolean! @default(value: false)
+  conteudo: String
+  orientacaoCorrecao: String
+  respostaModelo: String
+  respostaModeloImagemPath: String
+  createdAt: Timestamp! @default(expr: "request.time")
+  updatedAt: Timestamp! @default(expr: "request.time")
+}
+
+type RespostaAluno
+  @table(key: "id")
+  @unique(fields: ["alunoId", "questaoId"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  ownerUid: String! @default(expr: "auth.uid")
+  owner: Professor! @ref(fields: "ownerUid", references: "uid")
+  avaliacaoId: UUID!
+  avaliacao: Avaliacao! @ref(fields: "avaliacaoId", references: "id")
+  alunoId: UUID!
+  aluno: Aluno! @ref(fields: "alunoId", references: "id")
+  questaoId: UUID!
+  questao: Questao! @ref(fields: "questaoId", references: "id")
+  resposta: String
+  notaManual: Float @col(dataType: "numeric(8,2)")
+  feedback: String
+  createdAt: Timestamp! @default(expr: "request.time")
+  updatedAt: Timestamp! @default(expr: "request.time")
+}
+
+type ModeloFolhaResposta
+  @table(key: "id")
+  @unique(fields: ["avaliacaoId", "versao"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  ownerUid: String! @default(expr: "auth.uid")
+  owner: Professor! @ref(fields: "ownerUid", references: "uid")
+  avaliacaoId: UUID!
+  avaliacao: Avaliacao! @ref(fields: "avaliacaoId", references: "id")
+  versao: Int!
+  colunas: Int!
+  linhasPorColuna: Int!
+  orientacao: OrientacaoFolha!
+  snapshot: Any!
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+type FolhaResposta
+  @table(key: "id")
+  @unique(fields: ["modeloId", "alunoId"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  ownerUid: String! @default(expr: "auth.uid")
+  owner: Professor! @ref(fields: "ownerUid", references: "uid")
+  avaliacaoId: UUID!
+  avaliacao: Avaliacao! @ref(fields: "avaliacaoId", references: "id")
+  modeloId: UUID!
+  modelo: ModeloFolhaResposta! @ref(fields: "modeloId", references: "id")
+  alunoId: UUID
+  aluno: Aluno @ref(fields: "alunoId", references: "id")
+  codigo: String! @unique
+  qrPayload: String!
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+type DigitalizacaoFolha @table(key: "id") {
+  id: UUID! @default(expr: "uuidV4()")
+  ownerUid: String! @default(expr: "auth.uid")
+  owner: Professor! @ref(fields: "ownerUid", references: "uid")
+  avaliacaoId: UUID!
+  avaliacao: Avaliacao! @ref(fields: "avaliacaoId", references: "id")
+  folhaId: UUID
+  folha: FolhaResposta @ref(fields: "folhaId", references: "id")
+  modeloId: UUID
+  modelo: ModeloFolhaResposta @ref(fields: "modeloId", references: "id")
+  alunoId: UUID
+  aluno: Aluno @ref(fields: "alunoId", references: "id")
+  arquivoOriginal: String!
+  mimeOriginal: String!
+  paginaOrigem: Int! @default(value: 1)
+  paginaModelo: Int
+  rotacao: Int! @default(value: 0)
+  recorte: Any!
+  storagePath: String! @unique
+  larguraPx: Int!
+  alturaPx: Int!
+  tamanhoBytes: Int64!
+  resultadoLeitura: Any
+  confiancaLeitura: Float @col(dataType: "numeric(5,4)")
+  status: StatusDigitalizacao! @default(value: PREPARADA)
+  processadoAt: Timestamp
+  createdAt: Timestamp! @default(expr: "request.time")
+  updatedAt: Timestamp! @default(expr: "request.time")
+}
+
+type EnvioDevolutiva @table(key: "id") {
+  id: UUID! @default(expr: "uuidV4()")
+  ownerUid: String! @default(expr: "auth.uid")
+  owner: Professor! @ref(fields: "ownerUid", references: "uid")
+  avaliacaoId: UUID!
+  avaliacao: Avaliacao! @ref(fields: "avaliacaoId", references: "id")
+  alunoId: UUID!
+  aluno: Aluno! @ref(fields: "alunoId", references: "id")
+  destinatario: String!
+  assunto: String!
+  arquivoPdfPath: String
+  status: StatusEnvioDevolutiva! @default(value: PENDENTE)
+  gmailMessageId: String
+  erro: String
+  enviadoAt: Timestamp
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+type AutorizacaoGmail @table(key: "owner") {
+  ownerUid: String! @default(expr: "auth.uid")
+  owner: Professor! @ref(fields: "ownerUid", references: "uid")
+  googleEmail: String!
+  refreshTokenCiphertext: String!
+  refreshTokenIv: String!
+  scopes: String
+  createdAt: Timestamp! @default(expr: "request.time")
+  updatedAt: Timestamp! @default(expr: "request.time")
+}
