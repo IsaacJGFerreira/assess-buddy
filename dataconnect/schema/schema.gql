@@ -84,7 +84,9 @@ type Avaliacao @table(key: "id") {
   updatedAt: Timestamp! @default(expr: "request.time")
 }
 
-type Questao @table(key: "id") {
+type Questao
+  @table(key: "id")
+  @unique(fields: ["avaliacaoId", "numero"]) {
   id: UUID! @default(expr: "uuidV4()")
   ownerUid: String! @default(expr: "auth.uid")
   owner: Professor! @ref(fields: "ownerUid", references: "uid")
@@ -106,7 +108,9 @@ type Questao @table(key: "id") {
   updatedAt: Timestamp! @default(expr: "request.time")
 }
 
-type RespostaAluno @table(key: "id") {
+type RespostaAluno
+  @table(key: "id")
+  @unique(fields: ["alunoId", "questaoId"]) {
   id: UUID! @default(expr: "uuidV4()")
   ownerUid: String! @default(expr: "auth.uid")
   owner: Professor! @ref(fields: "ownerUid", references: "uid")
@@ -123,7 +127,9 @@ type RespostaAluno @table(key: "id") {
   updatedAt: Timestamp! @default(expr: "request.time")
 }
 
-type ModeloFolhaResposta @table(key: "id") {
+type ModeloFolhaResposta
+  @table(key: "id")
+  @unique(fields: ["avaliacaoId", "versao"]) {
   id: UUID! @default(expr: "uuidV4()")
   ownerUid: String! @default(expr: "auth.uid")
   owner: Professor! @ref(fields: "ownerUid", references: "uid")
@@ -137,7 +143,9 @@ type ModeloFolhaResposta @table(key: "id") {
   createdAt: Timestamp! @default(expr: "request.time")
 }
 
-type FolhaResposta @table(key: "id") {
+type FolhaResposta
+  @table(key: "id")
+  @unique(fields: ["modeloId", "alunoId"]) {
   id: UUID! @default(expr: "uuidV4()")
   ownerUid: String! @default(expr: "auth.uid")
   owner: Professor! @ref(fields: "ownerUid", references: "uid")
