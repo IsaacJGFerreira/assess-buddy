@@ -1,0 +1,7 @@
+connectorId: app
+generate:
+  javascriptSdk:
+    outputDir: ../../src/generated/dataconnect
+    package: "@assess-buddy/dataconnect"
+    packageJsonDir: ../..
+    react: true
