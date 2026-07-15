@@ -1,0 +1,78 @@
+query ListarMinhasTurmas @auth(level: USER) {
+  turmas(
+    where: { ownerUid: { eq_expr: "auth.uid" } }
+    orderBy: [{ createdAt: DESC }]
+  ) {
+    id
+    nome
+    serie
+    ano
+    createdAt
+    updatedAt
+  }
+}
+
+query ObterMinhaTurma($id: UUID!) @auth(level: USER) {
+  turmas(
+    where: {
+      id: { eq: $id }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+    limit: 1
+  ) {
+    id
+    nome
+    serie
+    ano
+    createdAt
+    updatedAt
+  }
+}
+
+mutation CriarTurma(
+  $nome: String!
+  $serie: String
+  $ano: Int
+) @auth(level: USER) @transaction {
+  turma_insert(
+    data: {
+      ownerUid_expr: "auth.uid"
+      nome: $nome
+      serie: $serie
+      ano: $ano
+    }
+  )
+}
+
+mutation AtualizarTurma(
+  $id: UUID!
+  $nome: String!
+  $serie: String
+  $ano: Int
+) @auth(level: USER) @transaction {
+  turma_update(
+    first: {
+      where: {
+        id: { eq: $id }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+    }
+    data: {
+      nome: $nome
+      serie: $serie
+      ano: $ano
+      updatedAt_expr: "request.time"
+    }
+  ) @check(expr: "this != null", message: "Turma não encontrada.")
+}
+
+mutation ExcluirTurma($id: UUID!) @auth(level: USER) @transaction {
+  turma_delete(
+    first: {
+      where: {
+        id: { eq: $id }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+    }
+  ) @check(expr: "this != null", message: "Turma não encontrada.")
+}
