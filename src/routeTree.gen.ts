@@ -14,9 +14,9 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedTurmasRouteImport } from './routes/_authenticated/turmas'
 import { Route as AuthenticatedPainelRouteImport } from './routes/_authenticated/painel'
-import { Route as AuthenticatedDevolutivaIdAlunoIdRouteImport } from './routes/_authenticated/devolutiva.$id.$alunoId'
 import { Route as AuthenticatedAvaliacoesNovaRouteImport } from './routes/_authenticated/avaliacoes.nova'
 import { Route as AuthenticatedAvaliacoesIdRouteImport } from './routes/_authenticated/avaliacoes.$id'
+import { Route as AuthenticatedDevolutivaIdAlunoIdRouteImport } from './routes/_authenticated/devolutiva.$id.$alunoId'
 import { Route as AuthenticatedAvaliacoesIdFolhaRouteImport } from './routes/_authenticated/avaliacoes.$id.folha'
 import { Route as AuthenticatedAvaliacoesIdDevolutivaAlunoIdRouteImport } from './routes/_authenticated/avaliacoes.$id.devolutiva.$alunoId'
 
@@ -44,12 +44,6 @@ const AuthenticatedPainelRoute = AuthenticatedPainelRouteImport.update({
   path: '/painel',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedDevolutivaIdAlunoIdRoute =
-  AuthenticatedDevolutivaIdAlunoIdRouteImport.update({
-    id: '/devolutiva/$id/$alunoId',
-    path: '/devolutiva/$id/$alunoId',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
 const AuthenticatedAvaliacoesNovaRoute =
   AuthenticatedAvaliacoesNovaRouteImport.update({
     id: '/avaliacoes/nova',
@@ -60,6 +54,12 @@ const AuthenticatedAvaliacoesIdRoute =
   AuthenticatedAvaliacoesIdRouteImport.update({
     id: '/avaliacoes/$id',
     path: '/avaliacoes/$id',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedDevolutivaIdAlunoIdRoute =
+  AuthenticatedDevolutivaIdAlunoIdRouteImport.update({
+    id: '/devolutiva/$id/$alunoId',
+    path: '/devolutiva/$id/$alunoId',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAvaliacoesIdFolhaRoute =
@@ -80,10 +80,10 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/painel': typeof AuthenticatedPainelRoute
   '/turmas': typeof AuthenticatedTurmasRoute
-  '/devolutiva/$id/$alunoId': typeof AuthenticatedDevolutivaIdAlunoIdRoute
   '/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRouteWithChildren
   '/avaliacoes/nova': typeof AuthenticatedAvaliacoesNovaRoute
   '/avaliacoes/$id/folha': typeof AuthenticatedAvaliacoesIdFolhaRoute
+  '/devolutiva/$id/$alunoId': typeof AuthenticatedDevolutivaIdAlunoIdRoute
   '/avaliacoes/$id/devolutiva/$alunoId': typeof AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute
 }
 export interface FileRoutesByTo {
@@ -91,10 +91,10 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/painel': typeof AuthenticatedPainelRoute
   '/turmas': typeof AuthenticatedTurmasRoute
-  '/devolutiva/$id/$alunoId': typeof AuthenticatedDevolutivaIdAlunoIdRoute
   '/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRouteWithChildren
   '/avaliacoes/nova': typeof AuthenticatedAvaliacoesNovaRoute
   '/avaliacoes/$id/folha': typeof AuthenticatedAvaliacoesIdFolhaRoute
+  '/devolutiva/$id/$alunoId': typeof AuthenticatedDevolutivaIdAlunoIdRoute
   '/avaliacoes/$id/devolutiva/$alunoId': typeof AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute
 }
 export interface FileRoutesById {
@@ -104,10 +104,10 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/_authenticated/painel': typeof AuthenticatedPainelRoute
   '/_authenticated/turmas': typeof AuthenticatedTurmasRoute
-  '/_authenticated/devolutiva/$id/$alunoId': typeof AuthenticatedDevolutivaIdAlunoIdRoute
   '/_authenticated/avaliacoes/$id': typeof AuthenticatedAvaliacoesIdRouteWithChildren
   '/_authenticated/avaliacoes/nova': typeof AuthenticatedAvaliacoesNovaRoute
   '/_authenticated/avaliacoes/$id/folha': typeof AuthenticatedAvaliacoesIdFolhaRoute
+  '/_authenticated/devolutiva/$id/$alunoId': typeof AuthenticatedDevolutivaIdAlunoIdRoute
   '/_authenticated/avaliacoes/$id/devolutiva/$alunoId': typeof AuthenticatedAvaliacoesIdDevolutivaAlunoIdRoute
 }
 export interface FileRouteTypes {
@@ -117,10 +117,10 @@ export interface FileRouteTypes {
     | '/auth'
     | '/painel'
     | '/turmas'
-    | '/devolutiva/$id/$alunoId'
     | '/avaliacoes/$id'
     | '/avaliacoes/nova'
     | '/avaliacoes/$id/folha'
+    | '/devolutiva/$id/$alunoId'
     | '/avaliacoes/$id/devolutiva/$alunoId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -128,10 +128,10 @@ export interface FileRouteTypes {
     | '/auth'
     | '/painel'
     | '/turmas'
-    | '/devolutiva/$id/$alunoId'
     | '/avaliacoes/$id'
     | '/avaliacoes/nova'
     | '/avaliacoes/$id/folha'
+    | '/devolutiva/$id/$alunoId'
     | '/avaliacoes/$id/devolutiva/$alunoId'
   id:
     | '__root__'
@@ -140,10 +140,10 @@ export interface FileRouteTypes {
     | '/auth'
     | '/_authenticated/painel'
     | '/_authenticated/turmas'
-    | '/_authenticated/devolutiva/$id/$alunoId'
     | '/_authenticated/avaliacoes/$id'
     | '/_authenticated/avaliacoes/nova'
     | '/_authenticated/avaliacoes/$id/folha'
+    | '/_authenticated/devolutiva/$id/$alunoId'
     | '/_authenticated/avaliacoes/$id/devolutiva/$alunoId'
   fileRoutesById: FileRoutesById
 }
@@ -190,13 +190,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPainelRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/devolutiva/$id/$alunoId': {
-      id: '/_authenticated/devolutiva/$id/$alunoId'
-      path: '/devolutiva/$id/$alunoId'
-      fullPath: '/devolutiva/$id/$alunoId'
-      preLoaderRoute: typeof AuthenticatedDevolutivaIdAlunoIdRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/_authenticated/avaliacoes/nova': {
       id: '/_authenticated/avaliacoes/nova'
       path: '/avaliacoes/nova'
@@ -209,6 +202,13 @@ declare module '@tanstack/react-router' {
       path: '/avaliacoes/$id'
       fullPath: '/avaliacoes/$id'
       preLoaderRoute: typeof AuthenticatedAvaliacoesIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/devolutiva/$id/$alunoId': {
+      id: '/_authenticated/devolutiva/$id/$alunoId'
+      path: '/devolutiva/$id/$alunoId'
+      fullPath: '/devolutiva/$id/$alunoId'
+      preLoaderRoute: typeof AuthenticatedDevolutivaIdAlunoIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/avaliacoes/$id/folha': {
@@ -248,17 +248,17 @@ const AuthenticatedAvaliacoesIdRouteWithChildren =
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedPainelRoute: typeof AuthenticatedPainelRoute
   AuthenticatedTurmasRoute: typeof AuthenticatedTurmasRoute
-  AuthenticatedDevolutivaIdAlunoIdRoute: typeof AuthenticatedDevolutivaIdAlunoIdRoute
   AuthenticatedAvaliacoesIdRoute: typeof AuthenticatedAvaliacoesIdRouteWithChildren
   AuthenticatedAvaliacoesNovaRoute: typeof AuthenticatedAvaliacoesNovaRoute
+  AuthenticatedDevolutivaIdAlunoIdRoute: typeof AuthenticatedDevolutivaIdAlunoIdRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedPainelRoute: AuthenticatedPainelRoute,
   AuthenticatedTurmasRoute: AuthenticatedTurmasRoute,
-  AuthenticatedDevolutivaIdAlunoIdRoute: AuthenticatedDevolutivaIdAlunoIdRoute,
   AuthenticatedAvaliacoesIdRoute: AuthenticatedAvaliacoesIdRouteWithChildren,
   AuthenticatedAvaliacoesNovaRoute: AuthenticatedAvaliacoesNovaRoute,
+  AuthenticatedDevolutivaIdAlunoIdRoute: AuthenticatedDevolutivaIdAlunoIdRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
@@ -272,3 +272,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
