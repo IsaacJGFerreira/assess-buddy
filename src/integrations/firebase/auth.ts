@@ -2,8 +2,8 @@ import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  signInWithCredential,
   signInWithEmailAndPassword,
-  signInWithPopup,
   signOut as firebaseSignOut,
   updateProfile,
   type Unsubscribe,
@@ -15,6 +15,14 @@ import { supabase } from "@/integrations/supabase/client";
 
 import { buscarMeuPerfil, salvarPerfil } from "./academic-data";
 import { getFirebaseAuth } from "./client";
+
+export interface AuthenticatedUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  firebaseUser: User | null;
+  source: "firebase" | "supabase";
+}
 
 export async function signInWithEmail(
   email: string,
@@ -76,42 +84,6 @@ export async function signUpWithEmail(
   }
 }
 
-export async function signInWithGoogle(): Promise<UserCredential> {
-  const provider = new GoogleAuthProvider();
-
-  provider.setCustomParameters({
-    prompt: "select_account",
-  });
-
-  const credential = await signInWithPopup(getFirebaseAuth(), provider);
-
-  try {
-    const googleCredential = GoogleAuthProvider.credentialFromResult(credential);
-    const idToken = googleCredential?.idToken;
-
-    if (!idToken) {
-      throw new Error("O Google não forneceu um token de identidade válido.");
-    }
-
-    const { error } = await supabase.auth.signInWithIdToken({
-      provider: "google",
-      token: idToken,
-    });
-
-    if (error) {
-      throw new Error(
-        `O login no Firebase foi concluído, mas a sessão temporária de compatibilidade falhou: ${error.message}`,
-      );
-    }
-
-    await ensureFirebaseProfile(credential.user);
-    return credential;
-  } catch (error) {
-    await firebaseSignOut(getFirebaseAuth()).catch(() => undefined);
-    throw error;
-  }
-}
-
 export async function signOut(): Promise<void> {
   const results = await Promise.allSettled([
     firebaseSignOut(getFirebaseAuth()),
@@ -139,18 +111,54 @@ export async function waitForAuthReady(): Promise<User | null> {
   return auth.currentUser;
 }
 
-export async function waitForCompatibleAuth(): Promise<User | null> {
-  const user = await waitForAuthReady();
-
-  if (!user) return null;
-
+export async function waitForCompatibleAuth(): Promise<AuthenticatedUser | null> {
+  let firebaseUser = await waitForAuthReady();
   const { data, error } = await supabase.auth.getSession();
 
-  if (error || !data.session) return null;
+  if (error) {
+    throw error;
+  }
 
-  await ensureFirebaseProfile(user);
+  const session = data.session;
 
-  return user;
+  if (!session) {
+    if (firebaseUser) {
+      await firebaseSignOut(getFirebaseAuth()).catch(() => undefined);
+    }
+    return null;
+  }
+
+  if (!firebaseUser && session.provider_token) {
+    try {
+      const googleCredential = GoogleAuthProvider.credential(
+        null,
+        session.provider_token,
+      );
+      const credential = await signInWithCredential(
+        getFirebaseAuth(),
+        googleCredential,
+      );
+      firebaseUser = credential.user;
+    } catch (error) {
+      console.warn(
+        "A sessão Google do Lovable foi criada, mas não pôde ser sincronizada com o Firebase.",
+        error,
+      );
+    }
+  }
+
+  if (firebaseUser) {
+    await ensureFirebaseProfile(firebaseUser);
+    return mapFirebaseUser(firebaseUser);
+  }
+
+  return {
+    uid: session.user.id,
+    email: session.user.email ?? null,
+    displayName: readSupabaseDisplayName(session.user.user_metadata),
+    firebaseUser: null,
+    source: "supabase",
+  };
 }
 
 export function getCurrentUser(): User | null {
@@ -186,7 +194,9 @@ export function authErrorMessage(error: unknown): string {
   if (code === "auth/invalid-email") return "Informe um e-mail válido.";
   if (code === "auth/popup-closed-by-user") return "A janela de login do Google foi fechada.";
   if (code === "auth/popup-blocked") return "O navegador bloqueou a janela de login do Google.";
-  if (code === "auth/network-request-failed") return "Não foi possível acessar o Firebase. Verifique sua conexão.";
+  if (code === "auth/network-request-failed") {
+    return "Não foi possível acessar o Firebase. Verifique sua conexão.";
+  }
 
   return error.message;
 }
@@ -213,7 +223,8 @@ async function ensureSupabasePasswordSession({
 
   if (!allowCreate || !isMissingSupabaseUser(signInResult.error)) {
     throw new Error(
-      signInResult.error?.message ?? "Não foi possível preparar a sessão temporária de compatibilidade.",
+      signInResult.error?.message ??
+        "Não foi possível preparar a sessão temporária de compatibilidade.",
     );
   }
 
@@ -236,6 +247,27 @@ async function ensureSupabasePasswordSession({
       "A conta foi criada, mas o sistema antigo exige confirmação por e-mail. Confirme o endereço e entre novamente.",
     );
   }
+}
+
+function mapFirebaseUser(user: User): AuthenticatedUser {
+  return {
+    uid: user.uid,
+    email: user.email,
+    displayName: user.displayName,
+    firebaseUser: user,
+    source: "firebase",
+  };
+}
+
+function readSupabaseDisplayName(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== "object") return null;
+
+  const values = metadata as Record<string, unknown>;
+  const candidate = values.full_name ?? values.name ?? values.nome;
+
+  return typeof candidate === "string" && candidate.trim()
+    ? candidate.trim()
+    : null;
 }
 
 function isMissingSupabaseUser(error: { message?: string } | null): boolean {
