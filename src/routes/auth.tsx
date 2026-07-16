@@ -7,10 +7,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   authErrorMessage,
   signInWithEmail,
-  signInWithGoogle,
   signUpWithEmail,
   waitForCompatibleAuth,
 } from "@/integrations/firebase/auth";
+import { lovable } from "@/integrations/lovable";
 import {
   clearGmailSetupAfterGoogleLogin,
   markGmailSetupAfterGoogleLogin,
@@ -79,12 +79,28 @@ function AuthPage() {
     markGmailSetupAfterGoogleLogin();
 
     try {
-      await signInWithGoogle();
+      const result = await lovable.auth.signInWithOAuth("google", {
+        redirect_uri: `${window.location.origin}/painel`,
+      });
+
+      if (result.error) {
+        throw result.error;
+      }
+
+      if (result.redirected) {
+        return;
+      }
+
+      const user = await waitForCompatibleAuth();
+
+      if (!user) {
+        throw new Error("O Google autorizou o acesso, mas a sessão não pôde ser carregada.");
+      }
+
       navigate({ to: "/painel", replace: true });
     } catch (error) {
       clearGmailSetupAfterGoogleLogin();
       toast.error(authErrorMessage(error));
-    } finally {
       setLoading(false);
     }
   }
@@ -107,11 +123,10 @@ function AuthPage() {
             disabled={loading}
             onClick={() => void handleGoogle()}
           >
-            Continuar com Google
+            {loading ? "Conectando…" : "Continuar com Google"}
           </Button>
           <p className="mt-2 text-center text-xs text-muted-foreground">
-            O acesso é feito pelo Firebase. A autorização para enviar devolutivas pelo Gmail continua
-            separada e será solicitada apenas quando necessária.
+            Durante a migração, o Google usa a autorização segura do Lovable e sincroniza a conta com o Firebase quando o token estiver disponível.
           </p>
 
           <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
