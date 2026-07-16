@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet, redirect, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { signOut as firebaseSignOut, waitForAuthReady } from "@/integrations/firebase/auth";
 import { useQueryClient } from "@tanstack/react-query";
 import { LayoutDashboard, Users, FileText, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,9 +14,9 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async () => {
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) throw redirect({ to: "/auth" });
-    return { user: data.user };
+    const user = await waitForAuthReady();
+    if (!user) throw redirect({ to: "/auth" });
+    return { user };
   },
   component: AuthedShell,
 });
@@ -75,7 +75,7 @@ function AuthedShell() {
   async function signOut() {
     await qc.cancelQueries();
     qc.clear();
-    await supabase.auth.signOut();
+    await firebaseSignOut();
     navigate({ to: "/auth", replace: true });
   }
 
