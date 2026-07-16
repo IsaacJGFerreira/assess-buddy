@@ -1,7 +1,11 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
+import {
+  signInWithEmail,
+  signUpWithEmail,
+  signInWithGooglePopup,
+  waitForAuthReady,
+} from "@/integrations/firebase/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,48 +25,47 @@ function AuthPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) navigate({ to: "/painel" });
+    waitForAuthReady().then((u) => {
+      if (u) navigate({ to: "/painel" });
     });
   }, [navigate]);
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (error) return toast.error(error.message);
-    navigate({ to: "/painel" });
+    try {
+      await signInWithEmail(email, password);
+      navigate({ to: "/painel" });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleSignUp(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: window.location.origin,
-        data: { nome },
-      },
-    });
-    setLoading(false);
-    if (error) return toast.error(error.message);
-    toast.success("Conta criada! Você já pode entrar.");
-    navigate({ to: "/painel" });
+    try {
+      await signUpWithEmail(email, password, nome);
+      toast.success("Conta criada! Você já pode entrar.");
+      navigate({ to: "/painel" });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleGoogle() {
     markGmailSetupAfterGoogleLogin();
-    const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: `${window.location.origin}/painel`,
-    });
-    if (result.error) {
+    try {
+      await signInWithGooglePopup();
+      navigate({ to: "/painel" });
+    } catch (err) {
       clearGmailSetupAfterGoogleLogin();
-      return toast.error(result.error.message ?? "Falha no login");
+      toast.error(err instanceof Error ? err.message : "Falha no login");
     }
-    if (result.redirected) return;
-    navigate({ to: "/painel" });
   }
 
   return (
