@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import {
   AlertCircle,
   ArrowLeft,
@@ -12,10 +13,13 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { supabase } from "@/integrations/supabase/client";
+import { obterAlunoFirebase } from "@/integrations/firebase/academic-data";
+import { getCurrentUser } from "@/integrations/firebase/auth";
+import { getFirebaseStorage } from "@/integrations/firebase/client";
 import {
   calculateFeedbackScore,
   generateFeedbackPdf,
@@ -25,13 +29,21 @@ import {
   type FeedbackStudent,
 } from "@/lib/devolutiva-pdf";
 import {
+  getAvaliacao,
+  listQuestoes,
+  listRespostasByAvaliacao,
+  saveResposta,
+  updateQuestao,
+  type Questao,
+} from "@/lib/domain";
+import {
   connectGmail,
+  getSavedGmailConnection,
   isGmailConnectionValid,
   sendPdfWithGmail,
   type GmailConnection,
 } from "@/lib/gmail-sender";
 
-const MODEL_IMAGE_BUCKET = "devolutivas-modelo";
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 type AssessmentRecord = FeedbackAssessment & { turma_id: string | null };
@@ -46,10 +58,6 @@ type DiscursiveDraft = {
 
 type ImageUrls = Record<string, string | null>;
 
-/**
- * Mantido temporariamente para não quebrar a tela antiga de turmas.
- * A devolutiva agora é aberta exclusivamente pelo Relatório da avaliação.
- */
 export function ClassFeedbackPanel(_props: { turmaId: string }) {
   return null;
 }
@@ -61,67 +69,67 @@ export function StudentFeedbackEditor({
   assessmentId: string;
   studentId: string;
 }) {
-  const qc = useQueryClient();
+  const queryClient = useQueryClient();
   const [drafts, setDrafts] = useState<Record<string, DiscursiveDraft>>({});
   const [imageUrls, setImageUrls] = useState<ImageUrls>({});
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingQuestionId, setUploadingQuestionId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [gmail, setGmail] = useState<GmailConnection | null>(null);
+  const [connectingGmail, setConnectingGmail] = useState(false);
+  const [gmail, setGmail] = useState<GmailConnection | null>(() =>
+    getSavedGmailConnection(),
+  );
 
   const userQuery = useQuery({
-    queryKey: ["feedback-user"],
+    queryKey: ["firebase-feedback-user"],
     queryFn: async () => {
-      const { data, error } = await supabase.auth.getUser();
-      if (error) throw error;
-      if (!data.user) throw new Error("Sua sessão expirou. Entre novamente.");
-      return data.user;
+      const user = getCurrentUser();
+      if (!user) throw new Error("Sua sessão do Firebase expirou. Entre novamente.");
+      await user.getIdToken();
+      return {
+        id: user.uid,
+        email: user.email?.trim().toLowerCase() ?? null,
+      };
     },
   });
 
   const assessmentQuery = useQuery({
-    queryKey: ["feedback-assessment", assessmentId],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("avaliacoes").select("*").eq("id", assessmentId).single();
-      if (error) throw error;
-      return data as unknown as AssessmentRecord;
-    },
+    queryKey: ["firebase-feedback-assessment", assessmentId],
+    queryFn: async () => (await getAvaliacao(assessmentId)) as AssessmentRecord,
   });
 
   const studentQuery = useQuery({
-    queryKey: ["feedback-student", studentId],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("alunos").select("*").eq("id", studentId).single();
-      if (error) throw error;
-      return data as unknown as FeedbackStudent;
+    queryKey: ["firebase-feedback-student", studentId],
+    queryFn: async (): Promise<FeedbackStudent> => {
+      const student = await obterAlunoFirebase(studentId);
+      if (!student) throw new Error("Aluno não encontrado.");
+      return {
+        id: student.id,
+        nome: student.nome,
+        matricula: student.matricula,
+        email: student.email,
+      };
     },
   });
 
   const questionsQuery = useQuery({
-    queryKey: ["feedback-questions", assessmentId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("questoes")
-        .select("*")
-        .eq("avaliacao_id", assessmentId)
-        .order("numero");
-      if (error) throw error;
-      return (data ?? []) as unknown as FeedbackQuestion[];
-    },
+    queryKey: ["firebase-feedback-questions", assessmentId],
+    queryFn: () => listQuestoes(assessmentId),
   });
 
   const responsesQuery = useQuery({
-    queryKey: ["feedback-responses", assessmentId, studentId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("respostas_alunos")
-        .select("*")
-        .eq("avaliacao_id", assessmentId)
-        .eq("aluno_id", studentId);
-      if (error) throw error;
-      return (data ?? []) as unknown as FeedbackResponse[];
-    },
+    queryKey: ["firebase-feedback-responses", assessmentId, studentId],
+    queryFn: async (): Promise<FeedbackResponse[]> =>
+      (await listRespostasByAvaliacao(assessmentId))
+        .filter((response) => response.aluno_id === studentId)
+        .map((response) => ({
+          aluno_id: response.aluno_id,
+          questao_id: response.questao_id,
+          resposta: response.resposta,
+          nota_manual: response.nota_manual ?? null,
+          feedback: response.feedback ?? null,
+        })),
   });
 
   const assessment = assessmentQuery.data ?? null;
@@ -133,25 +141,13 @@ export function StudentFeedbackEditor({
     [questions],
   );
   const score = useMemo(
-    () => calculateFeedbackScore(questions, mergeDrafts(responses, studentId, drafts)),
+    () =>
+      calculateFeedbackScore(
+        questions as FeedbackQuestion[],
+        mergeDrafts(responses, studentId, drafts),
+      ),
     [questions, responses, studentId, drafts],
   );
-
-  useEffect(() => {
-    const expectedEmail = userQuery.data?.email;
-    if (!expectedEmail || gmail) return;
-    let cancelled = false;
-    void connectGmail({ expectedEmail, returnUrl: window.location.href })
-      .then((connection) => {
-        if (!cancelled) setGmail(connection);
-      })
-      .catch((error) => {
-        if (!cancelled) toast.error(message(error));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [userQuery.data?.email, gmail]);
 
   useEffect(() => {
     const byQuestion = new Map(responses.map((response) => [response.questao_id, response]));
@@ -179,58 +175,58 @@ export function StudentFeedbackEditor({
 
   useEffect(() => {
     let cancelled = false;
-    async function loadSignedImages() {
+
+    async function loadImages() {
+      const storage = getFirebaseStorage();
       const entries = await Promise.all(
         discursiveQuestions.map(async (question) => {
           const path = question.resposta_modelo_imagem_path;
           if (!path) return [question.id, null] as const;
-          const { data, error } = await supabase.storage.from(MODEL_IMAGE_BUCKET).createSignedUrl(path, 3600);
-          if (error) return [question.id, null] as const;
-          return [question.id, data.signedUrl] as const;
+          try {
+            return [question.id, await getDownloadURL(ref(storage, path))] as const;
+          } catch {
+            return [question.id, null] as const;
+          }
         }),
       );
+
       if (!cancelled) setImageUrls(Object.fromEntries(entries));
     }
-    void loadSignedImages();
+
+    void loadImages();
     return () => {
       cancelled = true;
     };
   }, [discursiveQuestions]);
 
   async function save(showToast = true) {
-    if (!assessment || !student || !userQuery.data) return;
+    if (!assessment || !student || !assessment.turma_id) {
+      throw new Error("A avaliação precisa estar associada a uma turma.");
+    }
+
     setSaving(true);
+
     try {
-      const existing = new Map(responses.map((response) => [response.questao_id, response]));
       const obsoleteImages: string[] = [];
 
       for (const question of discursiveQuestions) {
         const draft = drafts[question.id] ?? emptyDraft();
         const scoreValue = parseScore(draft.score, question.numero, Number(question.valor));
-        const { error: questionError } = await supabase
-          .from("questoes")
-          .update(
-            {
-              resposta_modelo: draft.modelAnswer.trim() || null,
-              resposta_modelo_imagem_path: draft.imagePath,
-            } as never,
-          )
-          .eq("id", question.id);
-        if (questionError) throw questionError;
 
-        const { error: responseError } = await supabase.from("respostas_alunos").upsert(
-          {
-            avaliacao_id: assessment.id,
-            aluno_id: student.id,
-            questao_id: question.id,
-            resposta: draft.answer.trim() || null,
-            nota_manual: scoreValue,
-            feedback: draft.feedback.trim() || null,
-            owner_id: userQuery.data.id,
-          } as never,
-          { onConflict: "aluno_id,questao_id" },
-        );
-        if (responseError) throw responseError;
+        await updateQuestao(question, {
+          resposta_modelo: draft.modelAnswer.trim() || null,
+          resposta_modelo_imagem_path: draft.imagePath,
+        });
+
+        await saveResposta({
+          avaliacaoId: assessment.id,
+          turmaId: assessment.turma_id,
+          alunoId: student.id,
+          questaoId: question.id,
+          resposta: draft.answer.trim() || null,
+          notaManual: scoreValue,
+          feedback: draft.feedback.trim() || null,
+        });
 
         if (
           draft.originalImagePath &&
@@ -239,19 +235,15 @@ export function StudentFeedbackEditor({
         ) {
           obsoleteImages.push(draft.originalImagePath);
         }
-
-        existing.set(question.id, {
-          aluno_id: student.id,
-          questao_id: question.id,
-          resposta: draft.answer.trim() || null,
-          nota_manual: scoreValue,
-          feedback: draft.feedback.trim() || null,
-        });
       }
 
-      if (obsoleteImages.length) {
-        const { error } = await supabase.storage.from(MODEL_IMAGE_BUCKET).remove(obsoleteImages);
-        if (error) toast.warning("Os dados foram salvos, mas uma imagem antiga não pôde ser removida.");
+      let imageCleanupFailed = false;
+      for (const path of obsoleteImages) {
+        try {
+          await deleteObject(ref(getFirebaseStorage(), path));
+        } catch (error) {
+          if (!isObjectNotFound(error)) imageCleanupFailed = true;
+        }
       }
 
       setDrafts((current) =>
@@ -262,13 +254,25 @@ export function StudentFeedbackEditor({
           ]),
         ),
       );
+
       await Promise.all([
-        qc.invalidateQueries({ queryKey: ["feedback-questions", assessmentId] }),
-        qc.invalidateQueries({ queryKey: ["feedback-responses", assessmentId, studentId] }),
-        qc.invalidateQueries({ queryKey: ["respostas", assessmentId] }),
+        queryClient.invalidateQueries({
+          queryKey: ["firebase-feedback-questions", assessmentId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["firebase-feedback-responses", assessmentId, studentId],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["firebase-questoes", assessmentId] }),
+        queryClient.invalidateQueries({ queryKey: ["firebase-respostas", assessmentId] }),
       ]);
+
       setDirty(false);
-      if (showToast) toast.success("Devolutiva salva.");
+
+      if (imageCleanupFailed) {
+        toast.warning("A devolutiva foi salva, mas uma imagem antiga não pôde ser removida.");
+      } else if (showToast) {
+        toast.success("Devolutiva salva no Firebase.");
+      }
     } finally {
       setSaving(false);
     }
@@ -278,30 +282,43 @@ export function StudentFeedbackEditor({
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    if (!userQuery.data) return toast.error("Sua sessão expirou. Entre novamente.");
+
+    const user = getCurrentUser();
+    if (!user) return toast.error("Sua sessão do Firebase expirou. Entre novamente.");
     if (!new Set(["image/png", "image/jpeg", "image/webp"]).has(file.type)) {
       return toast.error("Use uma imagem PNG, JPG ou WEBP.");
     }
-    if (file.size > MAX_IMAGE_BYTES) return toast.error("A imagem deve ter no máximo 5 MB.");
+    if (file.size > MAX_IMAGE_BYTES) {
+      return toast.error("A imagem deve ter no máximo 5 MB.");
+    }
 
     setUploadingQuestionId(questionId);
+
     try {
       const filename = sanitizeFilename(file.name);
-      const path = `${userQuery.data.id}/${assessmentId}/${questionId}/${crypto.randomUUID()}-${filename}`;
-      const { error: uploadError } = await supabase.storage.from(MODEL_IMAGE_BUCKET).upload(path, file, {
+      const path =
+        `usuarios/${user.uid}/imagens-modelo/${assessmentId}/${questionId}/` +
+        `${crypto.randomUUID()}-${filename}`;
+      const storageReference = ref(getFirebaseStorage(), path);
+
+      await uploadBytes(storageReference, file, {
         contentType: file.type,
-        upsert: false,
+        cacheControl: "private,max-age=3600",
+        customMetadata: {
+          avaliacaoId: assessmentId,
+          questaoId: questionId,
+        },
       });
-      if (uploadError) throw uploadError;
-      const { data, error: signedError } = await supabase.storage
-        .from(MODEL_IMAGE_BUCKET)
-        .createSignedUrl(path, 3600);
-      if (signedError) throw signedError;
+
+      const url = await getDownloadURL(storageReference);
       setDrafts((current) => ({
         ...current,
-        [questionId]: { ...(current[questionId] ?? emptyDraft()), imagePath: path },
+        [questionId]: {
+          ...(current[questionId] ?? emptyDraft()),
+          imagePath: path,
+        },
       }));
-      setImageUrls((current) => ({ ...current, [questionId]: data.signedUrl }));
+      setImageUrls((current) => ({ ...current, [questionId]: url }));
       setDirty(true);
       toast.success("Imagem adicionada à resposta-modelo.");
     } catch (error) {
@@ -314,7 +331,10 @@ export function StudentFeedbackEditor({
   function removeModelImage(questionId: string) {
     setDrafts((current) => ({
       ...current,
-      [questionId]: { ...(current[questionId] ?? emptyDraft()), imagePath: null },
+      [questionId]: {
+        ...(current[questionId] ?? emptyDraft()),
+        imagePath: null,
+      },
     }));
     setImageUrls((current) => ({ ...current, [questionId]: null }));
     setDirty(true);
@@ -324,7 +344,9 @@ export function StudentFeedbackEditor({
     if (!assessment || !student || !userQuery.data?.email) {
       throw new Error("Não foi possível carregar os dados da devolutiva.");
     }
+
     if (dirty) await save(false);
+
     const finalQuestions = questions.map((question) => {
       const draft = drafts[question.id];
       if (question.tipo !== "disc" || !draft) return question;
@@ -335,13 +357,29 @@ export function StudentFeedbackEditor({
         resposta_modelo_imagem_url: imageUrls[question.id] ?? null,
       };
     });
+
     return generateFeedbackPdf({
       assessment,
       student,
-      questions: finalQuestions,
+      questions: finalQuestions as FeedbackQuestion[],
       responses: mergeDrafts(responses, studentId, drafts),
       teacherEmail: userQuery.data.email,
     });
+  }
+
+  async function authorizeGmail(): Promise<GmailConnection> {
+    const email = userQuery.data?.email;
+    if (!email) throw new Error("A conta do professor não possui e-mail.");
+
+    setConnectingGmail(true);
+    try {
+      const connection = await connectGmail({ expectedEmail: email });
+      setGmail(connection);
+      toast.success(`Gmail ${connection.email} autorizado para envio.`);
+      return connection;
+    } finally {
+      setConnectingGmail(false);
+    }
   }
 
   async function download() {
@@ -354,12 +392,17 @@ export function StudentFeedbackEditor({
   }
 
   async function send() {
-    if (!student?.email?.trim()) return toast.error("Cadastre o e-mail deste aluno em Turmas e alunos.");
-    if (!assessment || !userQuery.data?.email || !gmail) return;
+    if (!student?.email?.trim()) {
+      return toast.error("Cadastre o e-mail deste aluno em Turmas e alunos.");
+    }
+    if (!assessment || !userQuery.data?.email) return;
+
     setSending(true);
+
     try {
+      const connection = isGmailConnectionValid(gmail) ? gmail : await authorizeGmail();
       const pdf = await buildPdf();
-      await sendPdfWithGmail(gmail, {
+      await sendPdfWithGmail(connection, {
         to: student.email,
         subject: `Devolutiva — ${assessment.titulo}`,
         text: emailText(student.nome, assessment.titulo, userQuery.data.email),
@@ -383,6 +426,17 @@ export function StudentFeedbackEditor({
     return <div className="p-8 text-sm text-muted-foreground">Carregando devolutiva…</div>;
   }
 
+  const loadingError =
+    assessmentQuery.error ??
+    studentQuery.error ??
+    questionsQuery.error ??
+    responsesQuery.error ??
+    userQuery.error;
+
+  if (loadingError) {
+    return <div className="p-8 text-sm text-destructive">{message(loadingError)}</div>;
+  }
+
   if (!assessment || !student) {
     return <div className="p-8 text-sm text-muted-foreground">Avaliação ou aluno não encontrado.</div>;
   }
@@ -400,17 +454,31 @@ export function StudentFeedbackEditor({
             </a>
             <h1 className="mt-2 text-3xl font-bold tracking-tight">Devolutiva de {student.nome}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {assessment.titulo}{assessment.disciplina ? ` · ${assessment.disciplina}` : ""} · Nota atual: {formatNumber(score)} de {formatNumber(Number(assessment.valor_total))}
+              {assessment.titulo}
+              {assessment.disciplina ? ` · ${assessment.disciplina}` : ""} · Nota atual:{" "}
+              {formatNumber(score)} de {formatNumber(Number(assessment.valor_total))}
             </p>
           </div>
+
           {isGmailConnectionValid(gmail) ? (
             <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
               <Mail className="mr-2 h-4 w-4" /> Envio pelo Gmail de {gmail.email}
             </span>
           ) : (
-            <span className="inline-flex items-center rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Preparando o Gmail do professor…
-            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={connectingGmail || sending}
+              onClick={() => void authorizeGmail().catch((error) => toast.error(message(error)))}
+            >
+              {connectingGmail ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Mail className="mr-2 h-4 w-4" />
+              )}
+              Autorizar Gmail
+            </Button>
           )}
         </div>
 
@@ -453,25 +521,28 @@ export function StudentFeedbackEditor({
           <div className="border-b border-border p-4">
             <h2 className="font-semibold">Correção das questões discursivas</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Os comentários do professor aparecem somente nas discursivas. A resposta-modelo é comum a todos os alunos e pode conter texto, imagem ou ambos.
+              A resposta-modelo é comum à turma e pode conter texto, imagem ou ambos.
             </p>
           </div>
 
           {discursiveQuestions.length === 0 ? (
             <div className="p-6 text-sm text-muted-foreground">
-              Esta avaliação não possui questões discursivas. O PDF terá o gabarito e o resultado das questões objetivas.
+              Esta avaliação não possui questões discursivas.
             </div>
           ) : (
             <div className="divide-y divide-border">
               {discursiveQuestions.map((question) => {
                 const draft = drafts[question.id] ?? emptyDraft();
                 const imageUrl = imageUrls[question.id];
+
                 return (
                   <div key={question.id} className="space-y-5 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <h3 className="font-semibold">Questão {question.numero}</h3>
-                        <p className="text-xs text-muted-foreground">Valor: {formatNumber(Number(question.valor))} ponto(s)</p>
+                        <p className="text-xs text-muted-foreground">
+                          Valor: {formatNumber(Number(question.valor))} ponto(s)
+                        </p>
                       </div>
                       <div className="flex items-center gap-2">
                         <Label htmlFor={`score-${question.id}`}>Nota</Label>
@@ -480,9 +551,18 @@ export function StudentFeedbackEditor({
                           className="w-24"
                           inputMode="decimal"
                           value={draft.score}
-                          onChange={(event) => updateDraft(question.id, { score: event.target.value }, setDrafts, setDirty)}
+                          onChange={(event) =>
+                            updateDraft(
+                              question.id,
+                              { score: event.target.value },
+                              setDrafts,
+                              setDirty,
+                            )
+                          }
                         />
-                        <span className="text-sm text-muted-foreground">/ {formatNumber(Number(question.valor))}</span>
+                        <span className="text-sm text-muted-foreground">
+                          / {formatNumber(Number(question.valor))}
+                        </span>
                       </div>
                     </div>
 
@@ -493,7 +573,14 @@ export function StudentFeedbackEditor({
                         rows={4}
                         className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                         value={draft.modelAnswer}
-                        onChange={(event) => updateDraft(question.id, { modelAnswer: event.target.value }, setDrafts, setDirty)}
+                        onChange={(event) =>
+                          updateDraft(
+                            question.id,
+                            { modelAnswer: event.target.value },
+                            setDrafts,
+                            setDirty,
+                          )
+                        }
                         placeholder="Digite a resposta esperada, os conceitos e o raciocínio correto."
                       />
                     </div>
@@ -517,7 +604,11 @@ export function StudentFeedbackEditor({
                           />
                         </label>
                         {imageUrl && (
-                          <Button type="button" variant="outline" onClick={() => removeModelImage(question.id)}>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => removeModelImage(question.id)}
+                          >
                             <Trash2 className="mr-2 h-4 w-4" /> Remover imagem
                           </Button>
                         )}
@@ -538,20 +629,34 @@ export function StudentFeedbackEditor({
                         rows={3}
                         className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                         value={draft.answer}
-                        onChange={(event) => updateDraft(question.id, { answer: event.target.value }, setDrafts, setDirty)}
-                        placeholder="Registre a resposta do aluno, caso ela não esteja salva automaticamente."
+                        onChange={(event) =>
+                          updateDraft(
+                            question.id,
+                            { answer: event.target.value },
+                            setDrafts,
+                            setDirty,
+                          )
+                        }
                       />
                     </div>
 
                     <div className="space-y-1.5">
-                      <Label htmlFor={`feedback-${question.id}`}>Comentário individual para o aluno</Label>
+                      <Label htmlFor={`feedback-${question.id}`}>
+                        Comentário individual para o aluno
+                      </Label>
                       <textarea
                         id={`feedback-${question.id}`}
                         rows={3}
                         className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                         value={draft.feedback}
-                        onChange={(event) => updateDraft(question.id, { feedback: event.target.value }, setDrafts, setDirty)}
-                        placeholder="Explique o que foi bem desenvolvido e o que precisa ser corrigido."
+                        onChange={(event) =>
+                          updateDraft(
+                            question.id,
+                            { feedback: event.target.value },
+                            setDrafts,
+                            setDirty,
+                          )
+                        }
                       />
                     </div>
                   </div>
@@ -576,19 +681,32 @@ export function StudentFeedbackEditor({
               disabled={!dirty || saving || sending}
               onClick={() => void save().catch((error) => toast.error(message(error)))}
             >
-              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              {saving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
               Salvar devolutiva
             </Button>
-            <Button type="button" variant="outline" disabled={saving || sending} onClick={() => void download()}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving || sending}
+              onClick={() => void download()}
+            >
               <Download className="mr-2 h-4 w-4" /> Baixar PDF
             </Button>
           </div>
           <Button
             type="button"
-            disabled={saving || sending || !student.email || !isGmailConnectionValid(gmail)}
+            disabled={saving || sending || connectingGmail || !student.email}
             onClick={() => void send()}
           >
-            {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+            {sending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="mr-2 h-4 w-4" />
+            )}
             Enviar devolutiva
           </Button>
         </div>
@@ -627,6 +745,7 @@ function mergeDrafts(
   drafts: Record<string, DiscursiveDraft>,
 ): FeedbackResponse[] {
   const byQuestion = new Map(responses.map((response) => [response.questao_id, response]));
+
   for (const [questionId, draft] of Object.entries(drafts)) {
     byQuestion.set(questionId, {
       aluno_id: studentId,
@@ -636,15 +755,20 @@ function mergeDrafts(
       feedback: draft.feedback.trim() || null,
     });
   }
+
   return [...byQuestion.values()];
 }
 
 function parseScore(value: string, questionNumber: number, maximum: number): number | null {
   if (!value.trim()) return null;
   const parsed = Number(value.replace(",", "."));
+
   if (!Number.isFinite(parsed) || parsed < 0 || parsed > maximum) {
-    throw new Error(`A nota da questão ${questionNumber} deve ficar entre 0 e ${formatNumber(maximum)}.`);
+    throw new Error(
+      `A nota da questão ${questionNumber} deve ficar entre 0 e ${formatNumber(maximum)}.`,
+    );
   }
+
   return parsed;
 }
 
@@ -679,6 +803,15 @@ function downloadBlob(blob: Blob, filename: string) {
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(Number(value));
+}
+
+function isObjectNotFound(error: unknown): boolean {
+  return (
+    error !== null &&
+    typeof error === "object" &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "storage/object-not-found"
+  );
 }
 
 function message(error: unknown): string {
