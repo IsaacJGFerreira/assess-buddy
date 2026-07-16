@@ -1,0 +1,247 @@
+query ListarMeusModelosFolha(
+  $avaliacaoId: UUID!
+) @auth(level: USER) {
+  modelosFolhaResposta(
+    where: {
+      avaliacaoId: { eq: $avaliacaoId }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+    orderBy: [{ versao: DESC }]
+  ) {
+    id
+    avaliacaoId
+    versao
+    colunas
+    linhasPorColuna
+    orientacao
+    snapshot
+    createdAt
+  }
+}
+
+query ObterMeuModeloFolha(
+  $id: UUID!
+) @auth(level: USER) {
+  modelosFolhaResposta(
+    where: {
+      id: { eq: $id }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+    limit: 1
+  ) {
+    id
+    avaliacaoId
+    versao
+    colunas
+    linhasPorColuna
+    orientacao
+    snapshot
+    createdAt
+  }
+}
+
+mutation CriarModeloFolha(
+  $avaliacaoId: UUID!
+  $versao: Int!
+  $colunas: Int!
+  $linhasPorColuna: Int!
+  $orientacao: OrientacaoFolha!
+  $snapshot: Any!
+) @auth(level: USER) @transaction {
+  query @redact {
+    avaliacoes(
+      where: {
+        id: { eq: $avaliacaoId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(
+      expr: "this.size() == 1"
+      message: "Avaliação não encontrada."
+    ) {
+      id
+    }
+  }
+
+  modeloFolhaResposta_insert(
+    data: {
+      ownerUid_expr: "auth.uid"
+      avaliacaoId: $avaliacaoId
+      versao: $versao
+      colunas: $colunas
+      linhasPorColuna: $linhasPorColuna
+      orientacao: $orientacao
+      snapshot: $snapshot
+    }
+  )
+}
+
+query ListarMinhasFolhasPorAvaliacao(
+  $avaliacaoId: UUID!
+) @auth(level: USER) {
+  folhasResposta(
+    where: {
+      avaliacaoId: { eq: $avaliacaoId }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+    orderBy: [{ createdAt: DESC }]
+  ) {
+    id
+    avaliacaoId
+    modeloId
+    alunoId
+    codigo
+    qrPayload
+    createdAt
+  }
+}
+
+query ListarMinhasFolhasPorModelo(
+  $modeloId: UUID!
+) @auth(level: USER) {
+  folhasResposta(
+    where: {
+      modeloId: { eq: $modeloId }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+    orderBy: [{ createdAt: DESC }]
+  ) {
+    id
+    avaliacaoId
+    modeloId
+    alunoId
+    codigo
+    qrPayload
+    createdAt
+  }
+}
+
+query ObterMinhaFolhaPorCodigo(
+  $codigo: String!
+) @auth(level: USER) {
+  folhasResposta(
+    where: {
+      codigo: { eq: $codigo }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+    limit: 1
+  ) {
+    id
+    avaliacaoId
+    modeloId
+    alunoId
+    codigo
+    qrPayload
+    createdAt
+  }
+}
+
+mutation CriarFolhaRespostaComAluno(
+  $avaliacaoId: UUID!
+  $modeloId: UUID!
+  $turmaId: UUID!
+  $alunoId: UUID!
+  $codigo: String!
+  $qrPayload: String!
+) @auth(level: USER) @transaction {
+  query @redact {
+    avaliacoes(
+      where: {
+        id: { eq: $avaliacaoId }
+        turmaId: { eq: $turmaId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(
+      expr: "this.size() == 1"
+      message: "Avaliação não encontrada ou não vinculada à turma."
+    ) {
+      id
+    }
+
+    modelosFolhaResposta(
+      where: {
+        id: { eq: $modeloId }
+        avaliacaoId: { eq: $avaliacaoId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(
+      expr: "this.size() == 1"
+      message: "Modelo não pertence à avaliação."
+    ) {
+      id
+    }
+
+    alunos(
+      where: {
+        id: { eq: $alunoId }
+        turmaId: { eq: $turmaId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(
+      expr: "this.size() == 1"
+      message: "Aluno não pertence à turma da avaliação."
+    ) {
+      id
+    }
+  }
+
+  folhaResposta_insert(
+    data: {
+      ownerUid_expr: "auth.uid"
+      avaliacaoId: $avaliacaoId
+      modeloId: $modeloId
+      alunoId: $alunoId
+      codigo: $codigo
+      qrPayload: $qrPayload
+    }
+  )
+}
+
+mutation CriarFolhaRespostaSemAluno(
+  $avaliacaoId: UUID!
+  $modeloId: UUID!
+  $codigo: String!
+  $qrPayload: String!
+) @auth(level: USER) @transaction {
+  query @redact {
+    avaliacoes(
+      where: {
+        id: { eq: $avaliacaoId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(
+      expr: "this.size() == 1"
+      message: "Avaliação não encontrada."
+    ) {
+      id
+    }
+
+    modelosFolhaResposta(
+      where: {
+        id: { eq: $modeloId }
+        avaliacaoId: { eq: $avaliacaoId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(
+      expr: "this.size() == 1"
+      message: "Modelo não pertence à avaliação."
+    ) {
+      id
+    }
+  }
+
+  folhaResposta_insert(
+    data: {
+      ownerUid_expr: "auth.uid"
+      avaliacaoId: $avaliacaoId
+      modeloId: $modeloId
+      codigo: $codigo
+      qrPayload: $qrPayload
+    }
+  )
+}

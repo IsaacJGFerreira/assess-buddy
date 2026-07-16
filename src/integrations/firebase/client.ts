@@ -6,6 +6,7 @@ import {
   type FirebaseOptions,
 } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
+import { getStorage, type FirebaseStorage } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -25,25 +26,31 @@ const requiredConfig = [
 ] as const;
 
 function assertFirebaseConfig(): void {
-  const missing = requiredConfig
-    .filter(([, value]) => !value)
-    .map(([name]) => name);
+  const missing = requiredConfig.filter(([, value]) => !value).map(([name]) => name);
 
   if (missing.length > 0) {
-    throw new Error(
-      `Configuração do Firebase ausente: ${missing.join(", ")}`,
-    );
+    throw new Error(`Configuração do Firebase ausente: ${missing.join(", ")}`);
+  }
+}
+
+function assertFirebaseStorageConfig(): void {
+  if (!firebaseConfig.storageBucket) {
+    throw new Error("Configuração do Firebase ausente: VITE_FIREBASE_STORAGE_BUCKET");
   }
 }
 
 export function getFirebaseApp(): FirebaseApp {
   assertFirebaseConfig();
 
-  return getApps().length > 0
-    ? getApp()
-    : initializeApp(firebaseConfig);
+  return getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 }
 
 export function getFirebaseAuth(): Auth {
   return getAuth(getFirebaseApp());
+}
+
+export function getFirebaseStorage(): FirebaseStorage {
+  assertFirebaseStorageConfig();
+
+  return getStorage(getFirebaseApp());
 }

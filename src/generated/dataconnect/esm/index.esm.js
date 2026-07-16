@@ -1,5 +1,10 @@
 import { queryRef, executeQuery, validateArgsWithOptions, mutationRef, executeMutation, validateArgs } from 'firebase/data-connect';
 
+export const OrientacaoFolha = {
+  RETRATO: "RETRATO",
+  PAISAGEM: "PAISAGEM",
+}
+
 export const StatusAvaliacao = {
   ELABORACAO: "ELABORACAO",
   PRONTA: "PRONTA",
@@ -7,6 +12,14 @@ export const StatusAvaliacao = {
   EM_CORRECAO: "EM_CORRECAO",
   CORRIGIDA: "CORRIGIDA",
   DEVOLVIDA: "DEVOLVIDA",
+}
+
+export const StatusDigitalizacao = {
+  PREPARADA: "PREPARADA",
+  IDENTIFICADA: "IDENTIFICADA",
+  REVISAO: "REVISAO",
+  PROCESSADA: "PROCESSADA",
+  ERRO: "ERRO",
 }
 
 export const TipoQuestao = {
@@ -167,6 +180,205 @@ excluirAvaliacaoRef.operationName = 'ExcluirAvaliacao';
 export function excluirAvaliacao(dcOrVars, vars) {
   const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
   return executeMutation(excluirAvaliacaoRef(dcInstance, inputVars));
+}
+
+export const listarMinhasDigitalizacoesPorAvaliacaoRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return queryRef(dcInstance, 'ListarMinhasDigitalizacoesPorAvaliacao', inputVars);
+}
+listarMinhasDigitalizacoesPorAvaliacaoRef.operationName = 'ListarMinhasDigitalizacoesPorAvaliacao';
+
+export function listarMinhasDigitalizacoesPorAvaliacao(dcOrVars, varsOrOptions, options) {
+  
+  const { dc: dcInstance, vars: inputVars, options: inputOpts } = validateArgsWithOptions(connectorConfig, dcOrVars, varsOrOptions, options, true, true);
+  return executeQuery(listarMinhasDigitalizacoesPorAvaliacaoRef(dcInstance, inputVars), inputOpts && { fetchPolicy: inputOpts.fetchPolicy });
+}
+
+export const obterMinhaDigitalizacaoRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return queryRef(dcInstance, 'ObterMinhaDigitalizacao', inputVars);
+}
+obterMinhaDigitalizacaoRef.operationName = 'ObterMinhaDigitalizacao';
+
+export function obterMinhaDigitalizacao(dcOrVars, varsOrOptions, options) {
+  
+  const { dc: dcInstance, vars: inputVars, options: inputOpts } = validateArgsWithOptions(connectorConfig, dcOrVars, varsOrOptions, options, true, true);
+  return executeQuery(obterMinhaDigitalizacaoRef(dcInstance, inputVars), inputOpts && { fetchPolicy: inputOpts.fetchPolicy });
+}
+
+export const criarDigitalizacaoFolhaRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return mutationRef(dcInstance, 'CriarDigitalizacaoFolha', inputVars);
+}
+criarDigitalizacaoFolhaRef.operationName = 'CriarDigitalizacaoFolha';
+
+export function criarDigitalizacaoFolha(dcOrVars, vars) {
+  const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
+  return executeMutation(criarDigitalizacaoFolhaRef(dcInstance, inputVars));
+}
+
+export const vincularDigitalizacaoAFolhaRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return mutationRef(dcInstance, 'VincularDigitalizacaoAFolha', inputVars);
+}
+vincularDigitalizacaoAFolhaRef.operationName = 'VincularDigitalizacaoAFolha';
+
+export function vincularDigitalizacaoAFolha(dcOrVars, vars) {
+  const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
+  return executeMutation(vincularDigitalizacaoAFolhaRef(dcInstance, inputVars));
+}
+
+export const atualizarLeituraDigitalizacaoComAlunoRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return mutationRef(dcInstance, 'AtualizarLeituraDigitalizacaoComAluno', inputVars);
+}
+atualizarLeituraDigitalizacaoComAlunoRef.operationName = 'AtualizarLeituraDigitalizacaoComAluno';
+
+export function atualizarLeituraDigitalizacaoComAluno(dcOrVars, vars) {
+  const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
+  return executeMutation(atualizarLeituraDigitalizacaoComAlunoRef(dcInstance, inputVars));
+}
+
+export const atualizarLeituraDigitalizacaoSemAlunoRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return mutationRef(dcInstance, 'AtualizarLeituraDigitalizacaoSemAluno', inputVars);
+}
+atualizarLeituraDigitalizacaoSemAlunoRef.operationName = 'AtualizarLeituraDigitalizacaoSemAluno';
+
+export function atualizarLeituraDigitalizacaoSemAluno(dcOrVars, vars) {
+  const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
+  return executeMutation(atualizarLeituraDigitalizacaoSemAlunoRef(dcInstance, inputVars));
+}
+
+export const marcarDigitalizacaoComErroRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return mutationRef(dcInstance, 'MarcarDigitalizacaoComErro', inputVars);
+}
+marcarDigitalizacaoComErroRef.operationName = 'MarcarDigitalizacaoComErro';
+
+export function marcarDigitalizacaoComErro(dcOrVars, vars) {
+  const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
+  return executeMutation(marcarDigitalizacaoComErroRef(dcInstance, inputVars));
+}
+
+export const excluirDigitalizacaoFolhaRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return mutationRef(dcInstance, 'ExcluirDigitalizacaoFolha', inputVars);
+}
+excluirDigitalizacaoFolhaRef.operationName = 'ExcluirDigitalizacaoFolha';
+
+export function excluirDigitalizacaoFolha(dcOrVars, vars) {
+  const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
+  return executeMutation(excluirDigitalizacaoFolhaRef(dcInstance, inputVars));
+}
+
+export const listarMeusModelosFolhaRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return queryRef(dcInstance, 'ListarMeusModelosFolha', inputVars);
+}
+listarMeusModelosFolhaRef.operationName = 'ListarMeusModelosFolha';
+
+export function listarMeusModelosFolha(dcOrVars, varsOrOptions, options) {
+  
+  const { dc: dcInstance, vars: inputVars, options: inputOpts } = validateArgsWithOptions(connectorConfig, dcOrVars, varsOrOptions, options, true, true);
+  return executeQuery(listarMeusModelosFolhaRef(dcInstance, inputVars), inputOpts && { fetchPolicy: inputOpts.fetchPolicy });
+}
+
+export const obterMeuModeloFolhaRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return queryRef(dcInstance, 'ObterMeuModeloFolha', inputVars);
+}
+obterMeuModeloFolhaRef.operationName = 'ObterMeuModeloFolha';
+
+export function obterMeuModeloFolha(dcOrVars, varsOrOptions, options) {
+  
+  const { dc: dcInstance, vars: inputVars, options: inputOpts } = validateArgsWithOptions(connectorConfig, dcOrVars, varsOrOptions, options, true, true);
+  return executeQuery(obterMeuModeloFolhaRef(dcInstance, inputVars), inputOpts && { fetchPolicy: inputOpts.fetchPolicy });
+}
+
+export const criarModeloFolhaRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return mutationRef(dcInstance, 'CriarModeloFolha', inputVars);
+}
+criarModeloFolhaRef.operationName = 'CriarModeloFolha';
+
+export function criarModeloFolha(dcOrVars, vars) {
+  const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
+  return executeMutation(criarModeloFolhaRef(dcInstance, inputVars));
+}
+
+export const listarMinhasFolhasPorAvaliacaoRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return queryRef(dcInstance, 'ListarMinhasFolhasPorAvaliacao', inputVars);
+}
+listarMinhasFolhasPorAvaliacaoRef.operationName = 'ListarMinhasFolhasPorAvaliacao';
+
+export function listarMinhasFolhasPorAvaliacao(dcOrVars, varsOrOptions, options) {
+  
+  const { dc: dcInstance, vars: inputVars, options: inputOpts } = validateArgsWithOptions(connectorConfig, dcOrVars, varsOrOptions, options, true, true);
+  return executeQuery(listarMinhasFolhasPorAvaliacaoRef(dcInstance, inputVars), inputOpts && { fetchPolicy: inputOpts.fetchPolicy });
+}
+
+export const listarMinhasFolhasPorModeloRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return queryRef(dcInstance, 'ListarMinhasFolhasPorModelo', inputVars);
+}
+listarMinhasFolhasPorModeloRef.operationName = 'ListarMinhasFolhasPorModelo';
+
+export function listarMinhasFolhasPorModelo(dcOrVars, varsOrOptions, options) {
+  
+  const { dc: dcInstance, vars: inputVars, options: inputOpts } = validateArgsWithOptions(connectorConfig, dcOrVars, varsOrOptions, options, true, true);
+  return executeQuery(listarMinhasFolhasPorModeloRef(dcInstance, inputVars), inputOpts && { fetchPolicy: inputOpts.fetchPolicy });
+}
+
+export const obterMinhaFolhaPorCodigoRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return queryRef(dcInstance, 'ObterMinhaFolhaPorCodigo', inputVars);
+}
+obterMinhaFolhaPorCodigoRef.operationName = 'ObterMinhaFolhaPorCodigo';
+
+export function obterMinhaFolhaPorCodigo(dcOrVars, varsOrOptions, options) {
+  
+  const { dc: dcInstance, vars: inputVars, options: inputOpts } = validateArgsWithOptions(connectorConfig, dcOrVars, varsOrOptions, options, true, true);
+  return executeQuery(obterMinhaFolhaPorCodigoRef(dcInstance, inputVars), inputOpts && { fetchPolicy: inputOpts.fetchPolicy });
+}
+
+export const criarFolhaRespostaComAlunoRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return mutationRef(dcInstance, 'CriarFolhaRespostaComAluno', inputVars);
+}
+criarFolhaRespostaComAlunoRef.operationName = 'CriarFolhaRespostaComAluno';
+
+export function criarFolhaRespostaComAluno(dcOrVars, vars) {
+  const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
+  return executeMutation(criarFolhaRespostaComAlunoRef(dcInstance, inputVars));
+}
+
+export const criarFolhaRespostaSemAlunoRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return mutationRef(dcInstance, 'CriarFolhaRespostaSemAluno', inputVars);
+}
+criarFolhaRespostaSemAlunoRef.operationName = 'CriarFolhaRespostaSemAluno';
+
+export function criarFolhaRespostaSemAluno(dcOrVars, vars) {
+  const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
+  return executeMutation(criarFolhaRespostaSemAlunoRef(dcInstance, inputVars));
 }
 
 export const meuPerfilRef = (dc) => {

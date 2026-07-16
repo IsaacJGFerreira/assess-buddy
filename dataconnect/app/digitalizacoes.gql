@@ -1,0 +1,359 @@
+query ListarMinhasDigitalizacoesPorAvaliacao(
+  $avaliacaoId: UUID!
+) @auth(level: USER) {
+  digitalizacoesFolha(
+    where: {
+      avaliacaoId: { eq: $avaliacaoId }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+    orderBy: [{ createdAt: DESC }]
+  ) {
+    id
+    avaliacaoId
+    folhaId
+    modeloId
+    alunoId
+    arquivoOriginal
+    mimeOriginal
+    paginaOrigem
+    paginaModelo
+    rotacao
+    recorte
+    storagePath
+    larguraPx
+    alturaPx
+    tamanhoBytes
+    resultadoLeitura
+    confiancaLeitura
+    status
+    processadoAt
+    createdAt
+    updatedAt
+  }
+}
+
+query ObterMinhaDigitalizacao(
+  $id: UUID!
+) @auth(level: USER) {
+  digitalizacoesFolha(
+    where: {
+      id: { eq: $id }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+    limit: 1
+  ) {
+    id
+    avaliacaoId
+    folhaId
+    modeloId
+    alunoId
+    arquivoOriginal
+    mimeOriginal
+    paginaOrigem
+    paginaModelo
+    rotacao
+    recorte
+    storagePath
+    larguraPx
+    alturaPx
+    tamanhoBytes
+    resultadoLeitura
+    confiancaLeitura
+    status
+    processadoAt
+    createdAt
+    updatedAt
+  }
+}
+
+mutation CriarDigitalizacaoFolha(
+  $id: UUID!
+  $avaliacaoId: UUID!
+  $arquivoOriginal: String!
+  $mimeOriginal: String!
+  $paginaOrigem: Int!
+  $rotacao: Int!
+  $recorte: Any!
+  $storagePath: String!
+  $larguraPx: Int!
+  $alturaPx: Int!
+  $tamanhoBytes: Int64!
+) @auth(level: USER) @transaction {
+  query @redact {
+    avaliacoes(
+      where: {
+        id: { eq: $avaliacaoId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(
+      expr: "this.size() == 1"
+      message: "Avaliação não encontrada."
+    ) {
+      id
+    }
+  }
+
+  digitalizacaoFolha_insert(
+    data: {
+      id: $id
+      ownerUid_expr: "auth.uid"
+      avaliacaoId: $avaliacaoId
+      arquivoOriginal: $arquivoOriginal
+      mimeOriginal: $mimeOriginal
+      paginaOrigem: $paginaOrigem
+      rotacao: $rotacao
+      recorte: $recorte
+      storagePath: $storagePath
+      larguraPx: $larguraPx
+      alturaPx: $alturaPx
+      tamanhoBytes: $tamanhoBytes
+      status: PREPARADA
+    }
+  )
+}
+
+mutation VincularDigitalizacaoAFolha(
+  $id: UUID!
+  $avaliacaoId: UUID!
+  $folhaId: UUID!
+) @auth(level: USER) @transaction {
+  query @redact {
+    digitalizacoesFolha(
+      where: {
+        id: { eq: $id }
+        avaliacaoId: { eq: $avaliacaoId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(
+      expr: "this.size() == 1"
+      message: "Digitalização não encontrada."
+    ) {
+      id
+    }
+
+    folhasResposta(
+      where: {
+        id: { eq: $folhaId }
+        avaliacaoId: { eq: $avaliacaoId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(
+      expr: "this.size() == 1"
+      message: "Folha não pertence à avaliação."
+    ) {
+      id
+    }
+  }
+
+  digitalizacaoFolha_update(
+    first: {
+      where: {
+        id: { eq: $id }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+    }
+    data: {
+      folhaId: $folhaId
+      status: IDENTIFICADA
+      updatedAt_expr: "request.time"
+    }
+  ) @check(
+    expr: "this != null"
+    message: "Não foi possível vincular a digitalização."
+  )
+}
+
+mutation AtualizarLeituraDigitalizacaoComAluno(
+  $id: UUID!
+  $avaliacaoId: UUID!
+  $turmaId: UUID!
+  $alunoId: UUID!
+  $modeloId: UUID!
+  $paginaModelo: Int!
+  $resultadoLeitura: Any!
+  $confiancaLeitura: Float
+  $status: StatusDigitalizacao!
+  $processadoAt: Timestamp
+) @auth(level: USER) @transaction {
+  query @redact {
+    digitalizacoesFolha(
+      where: {
+        id: { eq: $id }
+        avaliacaoId: { eq: $avaliacaoId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(
+      expr: "this.size() == 1"
+      message: "Digitalização não encontrada."
+    ) {
+      id
+    }
+
+    avaliacoes(
+      where: {
+        id: { eq: $avaliacaoId }
+        turmaId: { eq: $turmaId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(
+      expr: "this.size() == 1"
+      message: "Avaliação não encontrada ou sem turma."
+    ) {
+      id
+    }
+
+    modelosFolhaResposta(
+      where: {
+        id: { eq: $modeloId }
+        avaliacaoId: { eq: $avaliacaoId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(
+      expr: "this.size() == 1"
+      message: "Modelo não pertence à avaliação."
+    ) {
+      id
+    }
+
+    alunos(
+      where: {
+        id: { eq: $alunoId }
+        turmaId: { eq: $turmaId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(
+      expr: "this.size() == 1"
+      message: "Aluno não pertence à turma da avaliação."
+    ) {
+      id
+    }
+  }
+
+  digitalizacaoFolha_update(
+    first: {
+      where: {
+        id: { eq: $id }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+    }
+    data: {
+      alunoId: $alunoId
+      modeloId: $modeloId
+      paginaModelo: $paginaModelo
+      resultadoLeitura: $resultadoLeitura
+      confiancaLeitura: $confiancaLeitura
+      status: $status
+      processadoAt: $processadoAt
+      updatedAt_expr: "request.time"
+    }
+  ) @check(
+    expr: "this != null"
+    message: "Não foi possível atualizar a digitalização."
+  )
+}
+
+mutation AtualizarLeituraDigitalizacaoSemAluno(
+  $id: UUID!
+  $avaliacaoId: UUID!
+  $modeloId: UUID!
+  $paginaModelo: Int!
+  $resultadoLeitura: Any!
+  $confiancaLeitura: Float
+  $status: StatusDigitalizacao!
+  $processadoAt: Timestamp
+) @auth(level: USER) @transaction {
+  query @redact {
+    digitalizacoesFolha(
+      where: {
+        id: { eq: $id }
+        avaliacaoId: { eq: $avaliacaoId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(
+      expr: "this.size() == 1"
+      message: "Digitalização não encontrada."
+    ) {
+      id
+    }
+
+    modelosFolhaResposta(
+      where: {
+        id: { eq: $modeloId }
+        avaliacaoId: { eq: $avaliacaoId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(
+      expr: "this.size() == 1"
+      message: "Modelo não pertence à avaliação."
+    ) {
+      id
+    }
+  }
+
+  digitalizacaoFolha_update(
+    first: {
+      where: {
+        id: { eq: $id }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+    }
+    data: {
+      alunoId: null
+      modeloId: $modeloId
+      paginaModelo: $paginaModelo
+      resultadoLeitura: $resultadoLeitura
+      confiancaLeitura: $confiancaLeitura
+      status: $status
+      processadoAt: $processadoAt
+      updatedAt_expr: "request.time"
+    }
+  ) @check(
+    expr: "this != null"
+    message: "Não foi possível atualizar a digitalização."
+  )
+}
+
+mutation MarcarDigitalizacaoComErro(
+  $id: UUID!
+) @auth(level: USER) @transaction {
+  digitalizacaoFolha_update(
+    first: {
+      where: {
+        id: { eq: $id }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+    }
+    data: {
+      status: ERRO
+      updatedAt_expr: "request.time"
+    }
+  ) @check(
+    expr: "this != null"
+    message: "Digitalização não encontrada."
+  )
+}
+
+mutation ExcluirDigitalizacaoFolha(
+  $id: UUID!
+) @auth(level: USER) @transaction {
+  digitalizacaoFolha_delete(
+    first: {
+      where: {
+        id: { eq: $id }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+    }
+  ) @check(
+    expr: "this != null"
+    message: "Digitalização não encontrada."
+  )
+}

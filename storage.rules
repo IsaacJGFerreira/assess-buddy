@@ -1,0 +1,40 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function authenticatedOwner(userId) {
+      return request.auth != null &&
+        request.auth.uid == userId;
+    }
+
+    function validScan() {
+      return request.resource.size <= 20 * 1024 * 1024 &&
+        request.resource.contentType == "image/png";
+    }
+
+    function validModelImage() {
+      return request.resource.size <= 10 * 1024 * 1024 &&
+        request.resource.contentType.matches(
+          "image/(png|jpeg|webp)"
+        );
+    }
+
+    match /usuarios/{userId}/digitalizacoes/{allPaths=**} {
+      allow read, delete: if authenticatedOwner(userId);
+
+      allow create, update:
+        if authenticatedOwner(userId) && validScan();
+    }
+
+    match /usuarios/{userId}/imagens-modelo/{allPaths=**} {
+      allow read, delete: if authenticatedOwner(userId);
+
+      allow create, update:
+        if authenticatedOwner(userId) && validModelImage();
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

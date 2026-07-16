@@ -8,6 +8,11 @@ export type Int64String = string;
 export type DateString = string;
 
 
+export enum OrientacaoFolha {
+  RETRATO = "RETRATO",
+  PAISAGEM = "PAISAGEM",
+};
+
 export enum StatusAvaliacao {
   ELABORACAO = "ELABORACAO",
   PRONTA = "PRONTA",
@@ -15,6 +20,14 @@ export enum StatusAvaliacao {
   EM_CORRECAO = "EM_CORRECAO",
   CORRIGIDA = "CORRIGIDA",
   DEVOLVIDA = "DEVOLVIDA",
+};
+
+export enum StatusDigitalizacao {
+  PREPARADA = "PREPARADA",
+  IDENTIFICADA = "IDENTIFICADA",
+  REVISAO = "REVISAO",
+  PROCESSADA = "PROCESSADA",
+  ERRO = "ERRO",
 };
 
 export enum TipoQuestao {
@@ -73,6 +86,38 @@ export interface AtualizarAvaliacaoSemTurmaVariables {
   instrucoes?: string | null;
   comentarioDevolutiva?: string | null;
   status: StatusAvaliacao;
+}
+
+export interface AtualizarLeituraDigitalizacaoComAlunoData {
+  digitalizacaoFolha_update?: DigitalizacaoFolha_Key | null;
+}
+
+export interface AtualizarLeituraDigitalizacaoComAlunoVariables {
+  id: UUIDString;
+  avaliacaoId: UUIDString;
+  turmaId: UUIDString;
+  alunoId: UUIDString;
+  modeloId: UUIDString;
+  paginaModelo: number;
+  resultadoLeitura: unknown;
+  confiancaLeitura?: number | null;
+  status: StatusDigitalizacao;
+  processadoAt?: TimestampString | null;
+}
+
+export interface AtualizarLeituraDigitalizacaoSemAlunoData {
+  digitalizacaoFolha_update?: DigitalizacaoFolha_Key | null;
+}
+
+export interface AtualizarLeituraDigitalizacaoSemAlunoVariables {
+  id: UUIDString;
+  avaliacaoId: UUIDString;
+  modeloId: UUIDString;
+  paginaModelo: number;
+  resultadoLeitura: unknown;
+  confiancaLeitura?: number | null;
+  status: StatusDigitalizacao;
+  processadoAt?: TimestampString | null;
 }
 
 export interface AtualizarQuestaoData {
@@ -168,6 +213,61 @@ export interface CriarAvaliacaoSemTurmaVariables {
   status: StatusAvaliacao;
 }
 
+export interface CriarDigitalizacaoFolhaData {
+  digitalizacaoFolha_insert: DigitalizacaoFolha_Key;
+}
+
+export interface CriarDigitalizacaoFolhaVariables {
+  id: UUIDString;
+  avaliacaoId: UUIDString;
+  arquivoOriginal: string;
+  mimeOriginal: string;
+  paginaOrigem: number;
+  rotacao: number;
+  recorte: unknown;
+  storagePath: string;
+  larguraPx: number;
+  alturaPx: number;
+  tamanhoBytes: Int64String;
+}
+
+export interface CriarFolhaRespostaComAlunoData {
+  folhaResposta_insert: FolhaResposta_Key;
+}
+
+export interface CriarFolhaRespostaComAlunoVariables {
+  avaliacaoId: UUIDString;
+  modeloId: UUIDString;
+  turmaId: UUIDString;
+  alunoId: UUIDString;
+  codigo: string;
+  qrPayload: string;
+}
+
+export interface CriarFolhaRespostaSemAlunoData {
+  folhaResposta_insert: FolhaResposta_Key;
+}
+
+export interface CriarFolhaRespostaSemAlunoVariables {
+  avaliacaoId: UUIDString;
+  modeloId: UUIDString;
+  codigo: string;
+  qrPayload: string;
+}
+
+export interface CriarModeloFolhaData {
+  modeloFolhaResposta_insert: ModeloFolhaResposta_Key;
+}
+
+export interface CriarModeloFolhaVariables {
+  avaliacaoId: UUIDString;
+  versao: number;
+  colunas: number;
+  linhasPorColuna: number;
+  orientacao: OrientacaoFolha;
+  snapshot: unknown;
+}
+
 export interface CriarQuestaoData {
   questao_insert: Questao_Key;
 }
@@ -238,6 +338,14 @@ export interface ExcluirAvaliacaoVariables {
   id: UUIDString;
 }
 
+export interface ExcluirDigitalizacaoFolhaData {
+  digitalizacaoFolha_delete?: DigitalizacaoFolha_Key | null;
+}
+
+export interface ExcluirDigitalizacaoFolhaVariables {
+  id: UUIDString;
+}
+
 export interface ExcluirQuestaoData {
   questao_delete?: Questao_Key | null;
 }
@@ -284,6 +392,23 @@ export interface ListarMeusAlunosPorTurmaVariables {
   turmaId: UUIDString;
 }
 
+export interface ListarMeusModelosFolhaData {
+  modelosFolhaResposta: ({
+    id: UUIDString;
+    avaliacaoId: UUIDString;
+    versao: number;
+    colunas: number;
+    linhasPorColuna: number;
+    orientacao: OrientacaoFolha;
+    snapshot: unknown;
+    createdAt: TimestampString;
+  } & ModeloFolhaResposta_Key)[];
+}
+
+export interface ListarMeusModelosFolhaVariables {
+  avaliacaoId: UUIDString;
+}
+
 export interface ListarMinhasAvaliacoesData {
   avaliacoes: ({
     id: UUIDString;
@@ -304,6 +429,68 @@ export interface ListarMinhasAvaliacoesData {
       ano?: number | null;
     } & Turma_Key;
   } & Avaliacao_Key)[];
+}
+
+export interface ListarMinhasDigitalizacoesPorAvaliacaoData {
+  digitalizacoesFolha: ({
+    id: UUIDString;
+    avaliacaoId: UUIDString;
+    folhaId?: UUIDString | null;
+    modeloId?: UUIDString | null;
+    alunoId?: UUIDString | null;
+    arquivoOriginal: string;
+    mimeOriginal: string;
+    paginaOrigem: number;
+    paginaModelo?: number | null;
+    rotacao: number;
+    recorte: unknown;
+    storagePath: string;
+    larguraPx: number;
+    alturaPx: number;
+    tamanhoBytes: Int64String;
+    resultadoLeitura?: unknown | null;
+    confiancaLeitura?: number | null;
+    status: StatusDigitalizacao;
+    processadoAt?: TimestampString | null;
+    createdAt: TimestampString;
+    updatedAt: TimestampString;
+  } & DigitalizacaoFolha_Key)[];
+}
+
+export interface ListarMinhasDigitalizacoesPorAvaliacaoVariables {
+  avaliacaoId: UUIDString;
+}
+
+export interface ListarMinhasFolhasPorAvaliacaoData {
+  folhasResposta: ({
+    id: UUIDString;
+    avaliacaoId: UUIDString;
+    modeloId: UUIDString;
+    alunoId?: UUIDString | null;
+    codigo: string;
+    qrPayload: string;
+    createdAt: TimestampString;
+  } & FolhaResposta_Key)[];
+}
+
+export interface ListarMinhasFolhasPorAvaliacaoVariables {
+  avaliacaoId: UUIDString;
+}
+
+export interface ListarMinhasFolhasPorModeloData {
+  folhasResposta: ({
+    id: UUIDString;
+    avaliacaoId: UUIDString;
+    modeloId: UUIDString;
+    alunoId?: UUIDString | null;
+    codigo: string;
+    qrPayload: string;
+    createdAt: TimestampString;
+  } & FolhaResposta_Key)[];
+}
+
+export interface ListarMinhasFolhasPorModeloVariables {
+  modeloId: UUIDString;
 }
 
 export interface ListarMinhasQuestoesData {
@@ -379,6 +566,14 @@ export interface ListarMinhasTurmasData {
   } & Turma_Key)[];
 }
 
+export interface MarcarDigitalizacaoComErroData {
+  digitalizacaoFolha_update?: DigitalizacaoFolha_Key | null;
+}
+
+export interface MarcarDigitalizacaoComErroVariables {
+  id: UUIDString;
+}
+
 export interface MeuPerfilData {
   professors: ({
     uid: string;
@@ -418,6 +613,23 @@ export interface ObterMeuAlunoVariables {
   id: UUIDString;
 }
 
+export interface ObterMeuModeloFolhaData {
+  modelosFolhaResposta: ({
+    id: UUIDString;
+    avaliacaoId: UUIDString;
+    versao: number;
+    colunas: number;
+    linhasPorColuna: number;
+    orientacao: OrientacaoFolha;
+    snapshot: unknown;
+    createdAt: TimestampString;
+  } & ModeloFolhaResposta_Key)[];
+}
+
+export interface ObterMeuModeloFolhaVariables {
+  id: UUIDString;
+}
+
 export interface ObterMinhaAvaliacaoData {
   avaliacoes: ({
     id: UUIDString;
@@ -442,6 +654,52 @@ export interface ObterMinhaAvaliacaoData {
 
 export interface ObterMinhaAvaliacaoVariables {
   id: UUIDString;
+}
+
+export interface ObterMinhaDigitalizacaoData {
+  digitalizacoesFolha: ({
+    id: UUIDString;
+    avaliacaoId: UUIDString;
+    folhaId?: UUIDString | null;
+    modeloId?: UUIDString | null;
+    alunoId?: UUIDString | null;
+    arquivoOriginal: string;
+    mimeOriginal: string;
+    paginaOrigem: number;
+    paginaModelo?: number | null;
+    rotacao: number;
+    recorte: unknown;
+    storagePath: string;
+    larguraPx: number;
+    alturaPx: number;
+    tamanhoBytes: Int64String;
+    resultadoLeitura?: unknown | null;
+    confiancaLeitura?: number | null;
+    status: StatusDigitalizacao;
+    processadoAt?: TimestampString | null;
+    createdAt: TimestampString;
+    updatedAt: TimestampString;
+  } & DigitalizacaoFolha_Key)[];
+}
+
+export interface ObterMinhaDigitalizacaoVariables {
+  id: UUIDString;
+}
+
+export interface ObterMinhaFolhaPorCodigoData {
+  folhasResposta: ({
+    id: UUIDString;
+    avaliacaoId: UUIDString;
+    modeloId: UUIDString;
+    alunoId?: UUIDString | null;
+    codigo: string;
+    qrPayload: string;
+    createdAt: TimestampString;
+  } & FolhaResposta_Key)[];
+}
+
+export interface ObterMinhaFolhaPorCodigoVariables {
+  codigo: string;
 }
 
 export interface ObterMinhaQuestaoData {
@@ -532,6 +790,16 @@ export interface SalvarMeuPerfilVariables {
 export interface Turma_Key {
   id: UUIDString;
   __typename?: 'Turma_Key';
+}
+
+export interface VincularDigitalizacaoAFolhaData {
+  digitalizacaoFolha_update?: DigitalizacaoFolha_Key | null;
+}
+
+export interface VincularDigitalizacaoAFolhaVariables {
+  id: UUIDString;
+  avaliacaoId: UUIDString;
+  folhaId: UUIDString;
 }
 
 interface ListarMeusAlunosPorTurmaRef {
@@ -677,6 +945,198 @@ export const excluirAvaliacaoRef: ExcluirAvaliacaoRef;
 
 export function excluirAvaliacao(vars: ExcluirAvaliacaoVariables): MutationPromise<ExcluirAvaliacaoData, ExcluirAvaliacaoVariables>;
 export function excluirAvaliacao(dc: DataConnect, vars: ExcluirAvaliacaoVariables): MutationPromise<ExcluirAvaliacaoData, ExcluirAvaliacaoVariables>;
+
+interface ListarMinhasDigitalizacoesPorAvaliacaoRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: ListarMinhasDigitalizacoesPorAvaliacaoVariables): QueryRef<ListarMinhasDigitalizacoesPorAvaliacaoData, ListarMinhasDigitalizacoesPorAvaliacaoVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: ListarMinhasDigitalizacoesPorAvaliacaoVariables): QueryRef<ListarMinhasDigitalizacoesPorAvaliacaoData, ListarMinhasDigitalizacoesPorAvaliacaoVariables>;
+  operationName: string;
+}
+export const listarMinhasDigitalizacoesPorAvaliacaoRef: ListarMinhasDigitalizacoesPorAvaliacaoRef;
+
+export function listarMinhasDigitalizacoesPorAvaliacao(vars: ListarMinhasDigitalizacoesPorAvaliacaoVariables, options?: ExecuteQueryOptions): QueryPromise<ListarMinhasDigitalizacoesPorAvaliacaoData, ListarMinhasDigitalizacoesPorAvaliacaoVariables>;
+export function listarMinhasDigitalizacoesPorAvaliacao(dc: DataConnect, vars: ListarMinhasDigitalizacoesPorAvaliacaoVariables, options?: ExecuteQueryOptions): QueryPromise<ListarMinhasDigitalizacoesPorAvaliacaoData, ListarMinhasDigitalizacoesPorAvaliacaoVariables>;
+
+interface ObterMinhaDigitalizacaoRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: ObterMinhaDigitalizacaoVariables): QueryRef<ObterMinhaDigitalizacaoData, ObterMinhaDigitalizacaoVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: ObterMinhaDigitalizacaoVariables): QueryRef<ObterMinhaDigitalizacaoData, ObterMinhaDigitalizacaoVariables>;
+  operationName: string;
+}
+export const obterMinhaDigitalizacaoRef: ObterMinhaDigitalizacaoRef;
+
+export function obterMinhaDigitalizacao(vars: ObterMinhaDigitalizacaoVariables, options?: ExecuteQueryOptions): QueryPromise<ObterMinhaDigitalizacaoData, ObterMinhaDigitalizacaoVariables>;
+export function obterMinhaDigitalizacao(dc: DataConnect, vars: ObterMinhaDigitalizacaoVariables, options?: ExecuteQueryOptions): QueryPromise<ObterMinhaDigitalizacaoData, ObterMinhaDigitalizacaoVariables>;
+
+interface CriarDigitalizacaoFolhaRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: CriarDigitalizacaoFolhaVariables): MutationRef<CriarDigitalizacaoFolhaData, CriarDigitalizacaoFolhaVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: CriarDigitalizacaoFolhaVariables): MutationRef<CriarDigitalizacaoFolhaData, CriarDigitalizacaoFolhaVariables>;
+  operationName: string;
+}
+export const criarDigitalizacaoFolhaRef: CriarDigitalizacaoFolhaRef;
+
+export function criarDigitalizacaoFolha(vars: CriarDigitalizacaoFolhaVariables): MutationPromise<CriarDigitalizacaoFolhaData, CriarDigitalizacaoFolhaVariables>;
+export function criarDigitalizacaoFolha(dc: DataConnect, vars: CriarDigitalizacaoFolhaVariables): MutationPromise<CriarDigitalizacaoFolhaData, CriarDigitalizacaoFolhaVariables>;
+
+interface VincularDigitalizacaoAFolhaRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: VincularDigitalizacaoAFolhaVariables): MutationRef<VincularDigitalizacaoAFolhaData, VincularDigitalizacaoAFolhaVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: VincularDigitalizacaoAFolhaVariables): MutationRef<VincularDigitalizacaoAFolhaData, VincularDigitalizacaoAFolhaVariables>;
+  operationName: string;
+}
+export const vincularDigitalizacaoAFolhaRef: VincularDigitalizacaoAFolhaRef;
+
+export function vincularDigitalizacaoAFolha(vars: VincularDigitalizacaoAFolhaVariables): MutationPromise<VincularDigitalizacaoAFolhaData, VincularDigitalizacaoAFolhaVariables>;
+export function vincularDigitalizacaoAFolha(dc: DataConnect, vars: VincularDigitalizacaoAFolhaVariables): MutationPromise<VincularDigitalizacaoAFolhaData, VincularDigitalizacaoAFolhaVariables>;
+
+interface AtualizarLeituraDigitalizacaoComAlunoRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: AtualizarLeituraDigitalizacaoComAlunoVariables): MutationRef<AtualizarLeituraDigitalizacaoComAlunoData, AtualizarLeituraDigitalizacaoComAlunoVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: AtualizarLeituraDigitalizacaoComAlunoVariables): MutationRef<AtualizarLeituraDigitalizacaoComAlunoData, AtualizarLeituraDigitalizacaoComAlunoVariables>;
+  operationName: string;
+}
+export const atualizarLeituraDigitalizacaoComAlunoRef: AtualizarLeituraDigitalizacaoComAlunoRef;
+
+export function atualizarLeituraDigitalizacaoComAluno(vars: AtualizarLeituraDigitalizacaoComAlunoVariables): MutationPromise<AtualizarLeituraDigitalizacaoComAlunoData, AtualizarLeituraDigitalizacaoComAlunoVariables>;
+export function atualizarLeituraDigitalizacaoComAluno(dc: DataConnect, vars: AtualizarLeituraDigitalizacaoComAlunoVariables): MutationPromise<AtualizarLeituraDigitalizacaoComAlunoData, AtualizarLeituraDigitalizacaoComAlunoVariables>;
+
+interface AtualizarLeituraDigitalizacaoSemAlunoRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: AtualizarLeituraDigitalizacaoSemAlunoVariables): MutationRef<AtualizarLeituraDigitalizacaoSemAlunoData, AtualizarLeituraDigitalizacaoSemAlunoVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: AtualizarLeituraDigitalizacaoSemAlunoVariables): MutationRef<AtualizarLeituraDigitalizacaoSemAlunoData, AtualizarLeituraDigitalizacaoSemAlunoVariables>;
+  operationName: string;
+}
+export const atualizarLeituraDigitalizacaoSemAlunoRef: AtualizarLeituraDigitalizacaoSemAlunoRef;
+
+export function atualizarLeituraDigitalizacaoSemAluno(vars: AtualizarLeituraDigitalizacaoSemAlunoVariables): MutationPromise<AtualizarLeituraDigitalizacaoSemAlunoData, AtualizarLeituraDigitalizacaoSemAlunoVariables>;
+export function atualizarLeituraDigitalizacaoSemAluno(dc: DataConnect, vars: AtualizarLeituraDigitalizacaoSemAlunoVariables): MutationPromise<AtualizarLeituraDigitalizacaoSemAlunoData, AtualizarLeituraDigitalizacaoSemAlunoVariables>;
+
+interface MarcarDigitalizacaoComErroRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: MarcarDigitalizacaoComErroVariables): MutationRef<MarcarDigitalizacaoComErroData, MarcarDigitalizacaoComErroVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: MarcarDigitalizacaoComErroVariables): MutationRef<MarcarDigitalizacaoComErroData, MarcarDigitalizacaoComErroVariables>;
+  operationName: string;
+}
+export const marcarDigitalizacaoComErroRef: MarcarDigitalizacaoComErroRef;
+
+export function marcarDigitalizacaoComErro(vars: MarcarDigitalizacaoComErroVariables): MutationPromise<MarcarDigitalizacaoComErroData, MarcarDigitalizacaoComErroVariables>;
+export function marcarDigitalizacaoComErro(dc: DataConnect, vars: MarcarDigitalizacaoComErroVariables): MutationPromise<MarcarDigitalizacaoComErroData, MarcarDigitalizacaoComErroVariables>;
+
+interface ExcluirDigitalizacaoFolhaRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: ExcluirDigitalizacaoFolhaVariables): MutationRef<ExcluirDigitalizacaoFolhaData, ExcluirDigitalizacaoFolhaVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: ExcluirDigitalizacaoFolhaVariables): MutationRef<ExcluirDigitalizacaoFolhaData, ExcluirDigitalizacaoFolhaVariables>;
+  operationName: string;
+}
+export const excluirDigitalizacaoFolhaRef: ExcluirDigitalizacaoFolhaRef;
+
+export function excluirDigitalizacaoFolha(vars: ExcluirDigitalizacaoFolhaVariables): MutationPromise<ExcluirDigitalizacaoFolhaData, ExcluirDigitalizacaoFolhaVariables>;
+export function excluirDigitalizacaoFolha(dc: DataConnect, vars: ExcluirDigitalizacaoFolhaVariables): MutationPromise<ExcluirDigitalizacaoFolhaData, ExcluirDigitalizacaoFolhaVariables>;
+
+interface ListarMeusModelosFolhaRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: ListarMeusModelosFolhaVariables): QueryRef<ListarMeusModelosFolhaData, ListarMeusModelosFolhaVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: ListarMeusModelosFolhaVariables): QueryRef<ListarMeusModelosFolhaData, ListarMeusModelosFolhaVariables>;
+  operationName: string;
+}
+export const listarMeusModelosFolhaRef: ListarMeusModelosFolhaRef;
+
+export function listarMeusModelosFolha(vars: ListarMeusModelosFolhaVariables, options?: ExecuteQueryOptions): QueryPromise<ListarMeusModelosFolhaData, ListarMeusModelosFolhaVariables>;
+export function listarMeusModelosFolha(dc: DataConnect, vars: ListarMeusModelosFolhaVariables, options?: ExecuteQueryOptions): QueryPromise<ListarMeusModelosFolhaData, ListarMeusModelosFolhaVariables>;
+
+interface ObterMeuModeloFolhaRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: ObterMeuModeloFolhaVariables): QueryRef<ObterMeuModeloFolhaData, ObterMeuModeloFolhaVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: ObterMeuModeloFolhaVariables): QueryRef<ObterMeuModeloFolhaData, ObterMeuModeloFolhaVariables>;
+  operationName: string;
+}
+export const obterMeuModeloFolhaRef: ObterMeuModeloFolhaRef;
+
+export function obterMeuModeloFolha(vars: ObterMeuModeloFolhaVariables, options?: ExecuteQueryOptions): QueryPromise<ObterMeuModeloFolhaData, ObterMeuModeloFolhaVariables>;
+export function obterMeuModeloFolha(dc: DataConnect, vars: ObterMeuModeloFolhaVariables, options?: ExecuteQueryOptions): QueryPromise<ObterMeuModeloFolhaData, ObterMeuModeloFolhaVariables>;
+
+interface CriarModeloFolhaRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: CriarModeloFolhaVariables): MutationRef<CriarModeloFolhaData, CriarModeloFolhaVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: CriarModeloFolhaVariables): MutationRef<CriarModeloFolhaData, CriarModeloFolhaVariables>;
+  operationName: string;
+}
+export const criarModeloFolhaRef: CriarModeloFolhaRef;
+
+export function criarModeloFolha(vars: CriarModeloFolhaVariables): MutationPromise<CriarModeloFolhaData, CriarModeloFolhaVariables>;
+export function criarModeloFolha(dc: DataConnect, vars: CriarModeloFolhaVariables): MutationPromise<CriarModeloFolhaData, CriarModeloFolhaVariables>;
+
+interface ListarMinhasFolhasPorAvaliacaoRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: ListarMinhasFolhasPorAvaliacaoVariables): QueryRef<ListarMinhasFolhasPorAvaliacaoData, ListarMinhasFolhasPorAvaliacaoVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: ListarMinhasFolhasPorAvaliacaoVariables): QueryRef<ListarMinhasFolhasPorAvaliacaoData, ListarMinhasFolhasPorAvaliacaoVariables>;
+  operationName: string;
+}
+export const listarMinhasFolhasPorAvaliacaoRef: ListarMinhasFolhasPorAvaliacaoRef;
+
+export function listarMinhasFolhasPorAvaliacao(vars: ListarMinhasFolhasPorAvaliacaoVariables, options?: ExecuteQueryOptions): QueryPromise<ListarMinhasFolhasPorAvaliacaoData, ListarMinhasFolhasPorAvaliacaoVariables>;
+export function listarMinhasFolhasPorAvaliacao(dc: DataConnect, vars: ListarMinhasFolhasPorAvaliacaoVariables, options?: ExecuteQueryOptions): QueryPromise<ListarMinhasFolhasPorAvaliacaoData, ListarMinhasFolhasPorAvaliacaoVariables>;
+
+interface ListarMinhasFolhasPorModeloRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: ListarMinhasFolhasPorModeloVariables): QueryRef<ListarMinhasFolhasPorModeloData, ListarMinhasFolhasPorModeloVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: ListarMinhasFolhasPorModeloVariables): QueryRef<ListarMinhasFolhasPorModeloData, ListarMinhasFolhasPorModeloVariables>;
+  operationName: string;
+}
+export const listarMinhasFolhasPorModeloRef: ListarMinhasFolhasPorModeloRef;
+
+export function listarMinhasFolhasPorModelo(vars: ListarMinhasFolhasPorModeloVariables, options?: ExecuteQueryOptions): QueryPromise<ListarMinhasFolhasPorModeloData, ListarMinhasFolhasPorModeloVariables>;
+export function listarMinhasFolhasPorModelo(dc: DataConnect, vars: ListarMinhasFolhasPorModeloVariables, options?: ExecuteQueryOptions): QueryPromise<ListarMinhasFolhasPorModeloData, ListarMinhasFolhasPorModeloVariables>;
+
+interface ObterMinhaFolhaPorCodigoRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: ObterMinhaFolhaPorCodigoVariables): QueryRef<ObterMinhaFolhaPorCodigoData, ObterMinhaFolhaPorCodigoVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: ObterMinhaFolhaPorCodigoVariables): QueryRef<ObterMinhaFolhaPorCodigoData, ObterMinhaFolhaPorCodigoVariables>;
+  operationName: string;
+}
+export const obterMinhaFolhaPorCodigoRef: ObterMinhaFolhaPorCodigoRef;
+
+export function obterMinhaFolhaPorCodigo(vars: ObterMinhaFolhaPorCodigoVariables, options?: ExecuteQueryOptions): QueryPromise<ObterMinhaFolhaPorCodigoData, ObterMinhaFolhaPorCodigoVariables>;
+export function obterMinhaFolhaPorCodigo(dc: DataConnect, vars: ObterMinhaFolhaPorCodigoVariables, options?: ExecuteQueryOptions): QueryPromise<ObterMinhaFolhaPorCodigoData, ObterMinhaFolhaPorCodigoVariables>;
+
+interface CriarFolhaRespostaComAlunoRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: CriarFolhaRespostaComAlunoVariables): MutationRef<CriarFolhaRespostaComAlunoData, CriarFolhaRespostaComAlunoVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: CriarFolhaRespostaComAlunoVariables): MutationRef<CriarFolhaRespostaComAlunoData, CriarFolhaRespostaComAlunoVariables>;
+  operationName: string;
+}
+export const criarFolhaRespostaComAlunoRef: CriarFolhaRespostaComAlunoRef;
+
+export function criarFolhaRespostaComAluno(vars: CriarFolhaRespostaComAlunoVariables): MutationPromise<CriarFolhaRespostaComAlunoData, CriarFolhaRespostaComAlunoVariables>;
+export function criarFolhaRespostaComAluno(dc: DataConnect, vars: CriarFolhaRespostaComAlunoVariables): MutationPromise<CriarFolhaRespostaComAlunoData, CriarFolhaRespostaComAlunoVariables>;
+
+interface CriarFolhaRespostaSemAlunoRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: CriarFolhaRespostaSemAlunoVariables): MutationRef<CriarFolhaRespostaSemAlunoData, CriarFolhaRespostaSemAlunoVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: CriarFolhaRespostaSemAlunoVariables): MutationRef<CriarFolhaRespostaSemAlunoData, CriarFolhaRespostaSemAlunoVariables>;
+  operationName: string;
+}
+export const criarFolhaRespostaSemAlunoRef: CriarFolhaRespostaSemAlunoRef;
+
+export function criarFolhaRespostaSemAluno(vars: CriarFolhaRespostaSemAlunoVariables): MutationPromise<CriarFolhaRespostaSemAlunoData, CriarFolhaRespostaSemAlunoVariables>;
+export function criarFolhaRespostaSemAluno(dc: DataConnect, vars: CriarFolhaRespostaSemAlunoVariables): MutationPromise<CriarFolhaRespostaSemAlunoData, CriarFolhaRespostaSemAlunoVariables>;
 
 interface MeuPerfilRef {
   /* Allow users to create refs without passing in DataConnect */
