@@ -1,11 +1,57 @@
-import { supabase } from "@/integrations/supabase/client";
-import type { Json } from "@/integrations/supabase/types";
-import type { AnswerSheetLayout, AnswerSheetOrientation } from "@/lib/answer-sheet-layout";
 import type { AnswerSheetIdentificationMode } from "@/lib/answer-sheet-identification";
+import type { AnswerSheetLayout, AnswerSheetOrientation } from "@/lib/answer-sheet-layout";
+import {
+  excluirTurmaFirebase,
+  listarAlunosFirebase,
+  listarTurmasFirebase,
+} from "@/integrations/firebase/academic-data";
+import {
+  atualizarAvaliacaoRuntime,
+  atualizarQuestaoRuntime,
+  criarAvaliacaoRuntime,
+  criarQuestoesRuntime,
+  excluirAvaliacaoRuntime,
+  excluirQuestaoRuntime,
+  listarAvaliacoesRuntime,
+  listarQuestoesRuntime,
+  listarRespostasRuntime,
+  obterAvaliacaoRuntime,
+  reordenarQuestoesRuntime,
+  salvarRespostaRuntime,
+  type RuntimeAvaliacao,
+  type RuntimeQuestao,
+  type RuntimeResposta,
+} from "@/integrations/firebase/runtime-data";
+import {
+  criarOuObterFolhaFirebase,
+  listarModelosFolhaFirebase,
+} from "@/integrations/firebase/sheet-data";
+import {
+  confirmarLeituraDigitalizacaoFirebase,
+  downloadDigitalizacaoFirebase,
+  excluirDigitalizacaoFirebase,
+  listarDigitalizacoesFirebase,
+  obterDigitalizacaoFirebase,
+  salvarLeituraDigitalizacaoFirebase,
+  uploadDigitalizacaoFirebase,
+} from "@/integrations/firebase/scan-data";
+
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
 
 export type TipoQuestao = "mc" | "ce" | "num" | "disc";
 export type StatusAvaliacao =
-  "elaboracao" | "pronta" | "aplicada" | "em_correcao" | "corrigida" | "devolvida";
+  | "elaboracao"
+  | "pronta"
+  | "aplicada"
+  | "em_correcao"
+  | "corrigida"
+  | "devolvida";
 
 export const STATUS_LABEL: Record<StatusAvaliacao, string> = {
   elaboracao: "Em elaboração",
@@ -36,6 +82,7 @@ export interface Aluno {
   nome: string;
   matricula: string | null;
   chamada: number | null;
+  email?: string | null;
 }
 
 export interface Avaliacao {
@@ -46,8 +93,10 @@ export interface Avaliacao {
   data_aplicacao: string | null;
   valor_total: number;
   instrucoes: string | null;
+  comentario_devolutiva?: string | null;
   status: StatusAvaliacao;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface Questao {
@@ -62,13 +111,19 @@ export interface Questao {
   desconto_erro: number;
   anulada: boolean;
   conteudo: string | null;
+  orientacao_correcao?: string | null;
+  resposta_modelo?: string | null;
+  resposta_modelo_imagem_path?: string | null;
 }
 
 export interface Resposta {
   id: string;
+  avaliacao_id?: string;
   aluno_id: string;
   questao_id: string;
   resposta: string | null;
+  nota_manual?: number | null;
+  feedback?: string | null;
 }
 
 export interface ModeloFolhaResposta {
@@ -127,133 +182,250 @@ export interface UploadDigitalizacaoFolhaInput {
   alturaPx: number;
 }
 
-const ANSWER_SHEET_SCHEMA_ERROR_CODES = new Set(["42P01", "42883", "PGRST202", "PGRST205"]);
-
-export function isAnswerSheetPersistenceUnavailable(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-
-  const candidate = error as { code?: unknown; message?: unknown };
-  const code = typeof candidate.code === "string" ? candidate.code : "";
-  const message = typeof candidate.message === "string" ? candidate.message.toLowerCase() : "";
-
-  return (
-    ANSWER_SHEET_SCHEMA_ERROR_CODES.has(code) ||
-    (message.includes("schema cache") &&
-      (message.includes("criar_ou_obter_folha_respostas") ||
-        message.includes("modelos_folha_respostas") ||
-        message.includes("folhas_respostas") ||
-        message.includes("digitalizacoes_folhas")))
-  );
+export interface CriarAvaliacaoInput {
+  titulo: string;
+  disciplina?: string | null;
+  turmaId?: string | null;
+  dataAplicacao?: string | null;
+  valorTotal?: number;
+  instrucoes?: string | null;
+  status?: StatusAvaliacao;
 }
 
-// ---------- Fetchers ----------
+export interface CriarQuestaoInput {
+  numero: number;
+  tipo: TipoQuestao;
+  qtd_alternativas?: number | null;
+  num_digitos?: number | null;
+  gabarito?: string | null;
+  valor?: number;
+  desconto_erro?: number;
+  anulada?: boolean;
+  conteudo?: string | null;
+}
+
+export function isAnswerSheetPersistenceUnavailable(_error: unknown): boolean {
+  return false;
+}
+
 export async function listTurmas(): Promise<Turma[]> {
-  const { data, error } = await supabase.from("turmas").select("*").order("nome");
-  if (error) throw error;
-  return data as Turma[];
+  const turmas = await listarTurmasFirebase();
+  return turmas.map((turma) => ({
+    id: turma.id,
+    nome: turma.nome,
+    serie: turma.serie,
+    ano: turma.ano,
+  }));
 }
 
 export async function listAlunosByTurma(turmaId: string): Promise<Aluno[]> {
-  const { data, error } = await supabase
-    .from("alunos")
-    .select("*")
-    .eq("turma_id", turmaId)
-    .order("nome");
-  if (error) throw error;
-  return data as Aluno[];
+  const alunos = await listarAlunosFirebase(turmaId);
+  return alunos.map((aluno) => ({
+    id: aluno.id,
+    turma_id: aluno.turmaId,
+    nome: aluno.nome,
+    matricula: aluno.matricula,
+    chamada: aluno.chamada,
+    email: aluno.email,
+  }));
 }
 
 export async function deleteTurma(turmaId: string): Promise<void> {
-  const { error } = await supabase.from("turmas").delete().eq("id", turmaId).select("id").single();
-  if (error) throw error;
+  await excluirTurmaFirebase(turmaId);
 }
 
 export async function listAvaliacoes(): Promise<Avaliacao[]> {
-  const { data, error } = await supabase
-    .from("avaliacoes")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return data as Avaliacao[];
+  const avaliacoes = await listarAvaliacoesRuntime();
+  return avaliacoes.map(mapAvaliacao).sort((a, b) =>
+    b.created_at.localeCompare(a.created_at),
+  );
+}
+
+export async function createAvaliacao(input: CriarAvaliacaoInput): Promise<Avaliacao> {
+  return mapAvaliacao(
+    await criarAvaliacaoRuntime({
+      turmaId: input.turmaId ?? null,
+      titulo: input.titulo,
+      disciplina: input.disciplina ?? null,
+      dataAplicacao: input.dataAplicacao ?? null,
+      valorTotal: input.valorTotal ?? 10,
+      instrucoes: input.instrucoes ?? null,
+      comentarioDevolutiva: null,
+      status: input.status ?? "elaboracao",
+    }),
+  );
+}
+
+export async function updateAvaliacao(
+  avaliacao: Avaliacao,
+  patch: Partial<Avaliacao>,
+): Promise<Avaliacao> {
+  const merged = { ...avaliacao, ...patch };
+  return mapAvaliacao(
+    await atualizarAvaliacaoRuntime({
+      id: merged.id,
+      turmaId: merged.turma_id,
+      titulo: merged.titulo,
+      disciplina: merged.disciplina,
+      dataAplicacao: merged.data_aplicacao,
+      valorTotal: Number(merged.valor_total),
+      instrucoes: merged.instrucoes,
+      comentarioDevolutiva: merged.comentario_devolutiva ?? null,
+      status: merged.status,
+    }),
+  );
 }
 
 export async function deleteAvaliacao(
   avaliacaoId: string,
 ): Promise<{ storageCleanupFailed: boolean }> {
-  const { data: scans, error: scansError } = await supabase
-    .from("digitalizacoes_folhas")
-    .select("storage_path")
-    .eq("avaliacao_id", avaliacaoId);
-  if (scansError && !isAnswerSheetPersistenceUnavailable(scansError)) throw scansError;
-
-  const { error } = await supabase
-    .from("avaliacoes")
-    .delete()
-    .eq("id", avaliacaoId)
-    .select("id")
-    .single();
-  if (error) throw error;
-
-  const storagePaths = (scans ?? []).map((scan) => scan.storage_path);
-  if (storagePaths.length === 0) return { storageCleanupFailed: false };
-
+  const scans = await listarDigitalizacoesFirebase(avaliacaoId);
   let storageCleanupFailed = false;
-  for (let index = 0; index < storagePaths.length; index += 100) {
-    const { error: storageError } = await supabase.storage
-      .from("folhas-digitalizadas")
-      .remove(storagePaths.slice(index, index + 100));
-    storageCleanupFailed ||= Boolean(storageError);
+
+  for (const scan of scans) {
+    try {
+      const result = await excluirDigitalizacaoFirebase(scan.id);
+      storageCleanupFailed ||= result.storageCleanupFailed;
+    } catch {
+      storageCleanupFailed = true;
+    }
   }
+
+  await excluirAvaliacaoRuntime(avaliacaoId);
   return { storageCleanupFailed };
 }
 
 export async function getAvaliacao(id: string): Promise<Avaliacao> {
-  const { data, error } = await supabase.from("avaliacoes").select("*").eq("id", id).single();
-  if (error) throw error;
-  return data as Avaliacao;
+  const avaliacao = await obterAvaliacaoRuntime(id);
+  if (!avaliacao) throw new Error("Avaliação não encontrada.");
+  return mapAvaliacao(avaliacao);
 }
 
 export async function listQuestoes(avaliacaoId: string): Promise<Questao[]> {
-  const { data, error } = await supabase
-    .from("questoes")
-    .select("*")
-    .eq("avaliacao_id", avaliacaoId)
-    .order("numero");
-  if (error) throw error;
-  return data as Questao[];
+  const questoes = await listarQuestoesRuntime(avaliacaoId);
+  return questoes.map(mapQuestao).sort((a, b) => a.numero - b.numero);
+}
+
+export async function createQuestoes(
+  avaliacaoId: string,
+  inputs: CriarQuestaoInput[],
+): Promise<Questao[]> {
+  const created = await criarQuestoesRuntime(
+    inputs.map((input) => ({
+      avaliacaoId,
+      numero: input.numero,
+      tipo: input.tipo,
+      qtdAlternativas:
+        input.qtd_alternativas ?? (input.tipo === "mc" ? 5 : input.tipo === "ce" ? 2 : null),
+      numDigitos: input.num_digitos ?? (input.tipo === "num" ? 3 : null),
+      gabarito: input.gabarito ?? null,
+      valor: input.valor ?? 1,
+      descontoErro: input.desconto_erro ?? 0,
+      anulada: input.anulada ?? false,
+      conteudo: input.conteudo ?? null,
+      orientacaoCorrecao: null,
+      respostaModelo: null,
+      respostaModeloImagemPath: null,
+    })),
+  );
+  return created.map(mapQuestao);
+}
+
+export async function updateQuestao(
+  questao: Questao,
+  patch: Partial<Questao>,
+): Promise<Questao> {
+  const merged = { ...questao, ...patch };
+  return mapQuestao(
+    await atualizarQuestaoRuntime({
+      id: merged.id,
+      numero: merged.numero,
+      tipo: merged.tipo,
+      qtdAlternativas: merged.qtd_alternativas,
+      numDigitos: merged.num_digitos,
+      gabarito: merged.gabarito,
+      valor: Number(merged.valor),
+      descontoErro: Number(merged.desconto_erro),
+      anulada: merged.anulada,
+      conteudo: merged.conteudo,
+      orientacaoCorrecao: merged.orientacao_correcao ?? null,
+      respostaModelo: merged.resposta_modelo ?? null,
+      respostaModeloImagemPath: merged.resposta_modelo_imagem_path ?? null,
+    }),
+  );
+}
+
+export async function duplicateQuestao(questao: Questao, numero: number): Promise<Questao> {
+  const [created] = await createQuestoes(questao.avaliacao_id, [
+    {
+      numero,
+      tipo: questao.tipo,
+      qtd_alternativas: questao.qtd_alternativas,
+      num_digitos: questao.num_digitos,
+      gabarito: questao.gabarito,
+      valor: questao.valor,
+      desconto_erro: questao.desconto_erro,
+      anulada: questao.anulada,
+      conteudo: questao.conteudo,
+    },
+  ]);
+  return created;
+}
+
+export async function deleteQuestao(id: string): Promise<void> {
+  await excluirQuestaoRuntime(id);
+}
+
+export async function moveQuestao(
+  questoes: Questao[],
+  questaoId: string,
+  novaPosicao: number,
+): Promise<Questao[]> {
+  const reordered = await reordenarQuestoesRuntime(
+    questoes.map(toRuntimeQuestao),
+    questaoId,
+    novaPosicao,
+  );
+  return reordered.map(mapQuestao);
 }
 
 export async function listRespostasByAvaliacao(avaliacaoId: string): Promise<Resposta[]> {
-  const { data, error } = await supabase
-    .from("respostas_alunos")
-    .select("*")
-    .eq("avaliacao_id", avaliacaoId);
-  if (error) throw error;
-  return data as Resposta[];
+  return (await listarRespostasRuntime(avaliacaoId)).map(mapResposta);
+}
+
+export async function saveResposta(input: {
+  avaliacaoId: string;
+  turmaId: string;
+  alunoId: string;
+  questaoId: string;
+  resposta?: string | null;
+  notaManual?: number | null;
+  feedback?: string | null;
+}): Promise<Resposta> {
+  return mapResposta(
+    await salvarRespostaRuntime({
+      avaliacaoId: input.avaliacaoId,
+      turmaId: input.turmaId,
+      alunoId: input.alunoId,
+      questaoId: input.questaoId,
+      resposta: input.resposta,
+      notaManual: input.notaManual,
+      feedback: input.feedback,
+    }),
+  );
 }
 
 export async function getLatestAnswerSheetModel(
   avaliacaoId: string,
 ): Promise<ModeloFolhaResposta | null> {
-  const { data, error } = await supabase
-    .from("modelos_folha_respostas")
-    .select("*")
-    .eq("avaliacao_id", avaliacaoId)
-    .order("versao", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  return data as ModeloFolhaResposta | null;
+  const modelos = await listarModelosFolhaFirebase(avaliacaoId);
+  return modelos[0] ? mapModelo(modelos[0]) : null;
 }
 
-export async function listAnswerSheetModels(avaliacaoId: string): Promise<ModeloFolhaResposta[]> {
-  const { data, error } = await supabase
-    .from("modelos_folha_respostas")
-    .select("*")
-    .eq("avaliacao_id", avaliacaoId)
-    .order("versao", { ascending: false });
-  if (error) throw error;
-  return data as ModeloFolhaResposta[];
+export async function listAnswerSheetModels(
+  avaliacaoId: string,
+): Promise<ModeloFolhaResposta[]> {
+  return (await listarModelosFolhaFirebase(avaliacaoId)).map(mapModelo);
 }
 
 export async function createOrGetAnswerSheet({
@@ -271,12 +443,9 @@ export async function createOrGetAnswerSheet({
   identificationMode?: AnswerSheetIdentificationMode;
   identifierDigits?: number;
 }): Promise<IdentificacaoFolhaResposta> {
-  const snapshot: Json = {
+  const snapshot = {
     schemaVersion: 2,
-    identificacao: {
-      modo: identificationMode,
-      digitos: identifierDigits,
-    },
+    identificacao: { modo: identificationMode, digitos: identifierDigits },
     avaliacao: {
       id: avaliacao.id,
       titulo: avaliacao.titulo,
@@ -299,101 +468,55 @@ export async function createOrGetAnswerSheet({
       conteudo: questao.conteudo,
     })),
   };
-  const { data, error } = await supabase.rpc("criar_ou_obter_folha_respostas", {
-    p_avaliacao_id: avaliacao.id,
-    p_aluno_id: (alunoId ?? null) as unknown as string,
-    p_colunas: layout.columns,
-    p_linhas_por_coluna: layout.rowsPerColumn,
-    p_orientacao: layout.orientation,
-    p_snapshot: snapshot,
+
+  return criarOuObterFolhaFirebase({
+    avaliacaoId: avaliacao.id,
+    turmaId: avaliacao.turma_id,
+    alunoId: alunoId ?? null,
+    colunas: layout.columns,
+    linhasPorColuna: layout.rowsPerColumn,
+    orientacao: layout.orientation,
+    snapshot,
   });
-  if (error) throw error;
-  const result = data?.[0];
-  if (!result) throw new Error("Não foi possível identificar a folha de respostas.");
-  return {
-    modeloId: result.modelo_id,
-    versao: result.versao,
-    folhaId: result.folha_id,
-    codigo: result.codigo,
-    qrPayload: result.qr_payload,
-  };
 }
 
-export async function listAnswerSheetScans(avaliacaoId: string): Promise<DigitalizacaoFolha[]> {
-  const { data, error } = await supabase
-    .from("digitalizacoes_folhas")
-    .select("*")
-    .eq("avaliacao_id", avaliacaoId)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return data as DigitalizacaoFolha[];
+export async function listAnswerSheetScans(
+  avaliacaoId: string,
+): Promise<DigitalizacaoFolha[]> {
+  return (await listarDigitalizacoesFirebase(avaliacaoId)).map(mapDigitalizacao);
 }
 
 export async function uploadAnswerSheetScan(
   input: UploadDigitalizacaoFolhaInput,
 ): Promise<DigitalizacaoFolha> {
-  const { data: authData, error: authError } = await supabase.auth.getUser();
-  if (authError) throw authError;
-  if (!authData.user) throw new Error("Sua sessão expirou. Entre novamente para continuar.");
-
-  const id = crypto.randomUUID();
-  const storagePath = `${authData.user.id}/${input.avaliacaoId}/${id}.png`;
-  const { error: uploadError } = await supabase.storage
-    .from("folhas-digitalizadas")
-    .upload(storagePath, input.imagem, {
-      cacheControl: "3600",
-      contentType: "image/png",
-      upsert: false,
-    });
-  if (uploadError) throw uploadError;
-
-  const { data, error } = await supabase
-    .from("digitalizacoes_folhas")
-    .insert({
-      id,
-      owner_id: authData.user.id,
-      avaliacao_id: input.avaliacaoId,
-      arquivo_original: input.arquivoOriginal,
-      mime_original: input.mimeOriginal,
-      pagina_origem: input.paginaOrigem,
+  return mapDigitalizacao(
+    await uploadDigitalizacaoFirebase({
+      avaliacaoId: input.avaliacaoId,
+      arquivoOriginal: input.arquivoOriginal,
+      mimeOriginal: input.mimeOriginal,
+      paginaOrigem: input.paginaOrigem,
       rotacao: input.rotacao,
       recorte: input.recorte,
-      storage_path: storagePath,
-      largura_px: input.larguraPx,
-      altura_px: input.alturaPx,
-      tamanho_bytes: input.imagem.size,
-      status: "preparada",
-    })
-    .select("*")
-    .single();
-
-  if (error) {
-    await supabase.storage.from("folhas-digitalizadas").remove([storagePath]);
-    throw error;
-  }
-  return data as DigitalizacaoFolha;
+      imagem: input.imagem,
+      larguraPx: input.larguraPx,
+      alturaPx: input.alturaPx,
+    }),
+  );
 }
 
 export async function deleteAnswerSheetScan(
   scan: Pick<DigitalizacaoFolha, "id" | "storage_path">,
 ): Promise<void> {
-  const { error: storageError } = await supabase.storage
-    .from("folhas-digitalizadas")
-    .remove([scan.storage_path]);
-  if (storageError) throw storageError;
-
-  const { error } = await supabase.from("digitalizacoes_folhas").delete().eq("id", scan.id);
-  if (error) throw error;
+  const result = await excluirDigitalizacaoFirebase(scan.id);
+  if (result.storageCleanupFailed) {
+    throw new Error("O registro foi apagado, mas o arquivo não pôde ser removido.");
+  }
 }
 
 export async function downloadAnswerSheetScan(
-  scan: Pick<DigitalizacaoFolha, "storage_path">,
+  scan: Pick<DigitalizacaoFolha, "id" | "storage_path">,
 ): Promise<Blob> {
-  const { data, error } = await supabase.storage
-    .from("folhas-digitalizadas")
-    .download(scan.storage_path);
-  if (error) throw error;
-  return data;
+  return downloadDigitalizacaoFirebase(scan.id);
 }
 
 export async function saveAnswerSheetScanReading({
@@ -411,21 +534,19 @@ export async function saveAnswerSheetScanReading({
   resultado: Json;
   confianca: number;
 }): Promise<void> {
-  const { error } = await supabase
-    .from("digitalizacoes_folhas")
-    .update({
-      aluno_id: alunoId || null,
-      modelo_id: modeloId,
-      pagina_modelo: pagina,
-      resultado_leitura: resultado,
-      confianca_leitura: Math.min(1, Math.max(0, confianca)),
-      status: "revisao",
-      processado_at: null,
-    })
-    .eq("id", scanId)
-    .select("id")
-    .single();
-  if (error) throw error;
+  const scan = await obterDigitalizacaoFirebase(scanId);
+  if (!scan) throw new Error("Digitalização não encontrada.");
+  const avaliacao = await getAvaliacao(scan.avaliacaoId);
+  await salvarLeituraDigitalizacaoFirebase({
+    digitalizacaoId: scanId,
+    avaliacaoId: scan.avaliacaoId,
+    turmaId: avaliacao.turma_id,
+    alunoId,
+    modeloId,
+    paginaModelo: pagina,
+    resultado,
+    confianca,
+  });
 }
 
 export async function confirmAnswerSheetScanReading({
@@ -441,34 +562,20 @@ export async function confirmAnswerSheetScanReading({
   pagina: number;
   resultado: Json;
 }): Promise<void> {
-  if (!alunoId) {
-    const { error } = await supabase
-      .from("digitalizacoes_folhas")
-      .update({
-        aluno_id: null,
-        modelo_id: modeloId,
-        pagina_modelo: pagina,
-        resultado_leitura: resultado,
-        status: "processada",
-        processado_at: new Date().toISOString(),
-      })
-      .eq("id", scanId)
-      .select("id")
-      .single();
-    if (error) throw error;
-    return;
-  }
-  const { error } = await supabase.rpc("confirmar_leitura_folha", {
-    p_digitalizacao_id: scanId,
-    p_aluno_id: alunoId,
-    p_modelo_id: modeloId,
-    p_pagina: pagina,
-    p_resultado: resultado,
+  const scan = await obterDigitalizacaoFirebase(scanId);
+  if (!scan) throw new Error("Digitalização não encontrada.");
+  const avaliacao = await getAvaliacao(scan.avaliacaoId);
+  await confirmarLeituraDigitalizacaoFirebase({
+    digitalizacaoId: scanId,
+    avaliacaoId: scan.avaliacaoId,
+    turmaId: avaliacao.turma_id,
+    alunoId,
+    modeloId,
+    paginaModelo: pagina,
+    resultado,
   });
-  if (error) throw error;
 }
 
-// ---------- Scoring ----------
 export type Situacao = "correta" | "incorreta" | "branco" | "anulada";
 
 export function corrigirQuestao(
@@ -492,23 +599,30 @@ export function calcularNotaAluno(
   respostas: Resposta[],
 ): { nota: number; acertos: number; erros: number; branco: number; anuladas: number } {
   const byQ = new Map(respostas.map((r) => [r.questao_id, r.resposta]));
-  let nota = 0,
-    acertos = 0,
-    erros = 0,
-    branco = 0,
-    anuladas = 0;
+  let nota = 0;
+  let acertos = 0;
+  let erros = 0;
+  let branco = 0;
+  let anuladas = 0;
+
   for (const q of questoes) {
     const { situacao, pontos } = corrigirQuestao(q, byQ.get(q.id));
     nota += pontos;
-    if (situacao === "correta") acertos++;
-    else if (situacao === "incorreta") erros++;
-    else if (situacao === "branco") branco++;
-    else if (situacao === "anulada") anuladas++;
+    if (situacao === "correta") acertos += 1;
+    else if (situacao === "incorreta") erros += 1;
+    else if (situacao === "branco") branco += 1;
+    else anuladas += 1;
   }
-  return { nota: Math.round(nota * 100) / 100, acertos, erros, branco, anuladas };
+
+  return {
+    nota: Math.round(nota * 100) / 100,
+    acertos,
+    erros,
+    branco,
+    anuladas,
+  };
 }
 
-// ---------- Formatting helpers ----------
 export function alternativas(q: Questao): string[] {
   if (q.tipo === "mc") {
     const n = q.qtd_alternativas ?? 5;
@@ -516,4 +630,143 @@ export function alternativas(q: Questao): string[] {
   }
   if (q.tipo === "ce") return ["C", "E"];
   return [];
+}
+
+function mapAvaliacao(value: RuntimeAvaliacao): Avaliacao {
+  return {
+    id: value.id,
+    titulo: value.titulo,
+    disciplina: value.disciplina,
+    turma_id: value.turmaId,
+    data_aplicacao: value.dataAplicacao,
+    valor_total: value.valorTotal,
+    instrucoes: value.instrucoes,
+    comentario_devolutiva: value.comentarioDevolutiva,
+    status: value.status,
+    created_at: value.createdAt,
+    updated_at: value.updatedAt,
+  };
+}
+
+function mapQuestao(value: RuntimeQuestao): Questao {
+  return {
+    id: value.id,
+    avaliacao_id: value.avaliacaoId,
+    numero: value.numero,
+    tipo: value.tipo,
+    qtd_alternativas: value.qtdAlternativas,
+    num_digitos: value.numDigitos,
+    gabarito: value.gabarito,
+    valor: value.valor,
+    desconto_erro: value.descontoErro,
+    anulada: value.anulada,
+    conteudo: value.conteudo,
+    orientacao_correcao: value.orientacaoCorrecao,
+    resposta_modelo: value.respostaModelo,
+    resposta_modelo_imagem_path: value.respostaModeloImagemPath,
+  };
+}
+
+function toRuntimeQuestao(value: Questao): RuntimeQuestao {
+  return {
+    id: value.id,
+    avaliacaoId: value.avaliacao_id,
+    numero: value.numero,
+    tipo: value.tipo,
+    qtdAlternativas: value.qtd_alternativas,
+    numDigitos: value.num_digitos,
+    gabarito: value.gabarito,
+    valor: value.valor,
+    descontoErro: value.desconto_erro,
+    anulada: value.anulada,
+    conteudo: value.conteudo,
+    orientacaoCorrecao: value.orientacao_correcao ?? null,
+    respostaModelo: value.resposta_modelo ?? null,
+    respostaModeloImagemPath: value.resposta_modelo_imagem_path ?? null,
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
+function mapResposta(value: RuntimeResposta): Resposta {
+  return {
+    id: value.id,
+    avaliacao_id: value.avaliacaoId,
+    aluno_id: value.alunoId,
+    questao_id: value.questaoId,
+    resposta: value.resposta,
+    nota_manual: value.notaManual,
+    feedback: value.feedback,
+  };
+}
+
+function mapModelo(value: {
+  id: string;
+  avaliacaoId: string;
+  versao: number;
+  colunas: number;
+  linhasPorColuna: number;
+  orientacao: AnswerSheetOrientation;
+  snapshot: unknown;
+  createdAt: string;
+}): ModeloFolhaResposta {
+  return {
+    id: value.id,
+    avaliacao_id: value.avaliacaoId,
+    versao: value.versao,
+    colunas: value.colunas,
+    linhas_por_coluna: value.linhasPorColuna,
+    orientacao: value.orientacao,
+    snapshot: value.snapshot as Json,
+    created_at: value.createdAt,
+  };
+}
+
+function mapDigitalizacao(value: {
+  id: string;
+  avaliacaoId: string;
+  folhaId: string | null;
+  modeloId: string | null;
+  alunoId: string | null;
+  arquivoOriginal: string;
+  mimeOriginal: DigitalizacaoFolha["mime_original"];
+  paginaOrigem: number;
+  paginaModelo: number | null;
+  rotacao: number;
+  recorte: unknown;
+  storagePath: string;
+  larguraPx: number;
+  alturaPx: number;
+  tamanhoBytes: number;
+  resultadoLeitura: unknown | null;
+  confiancaLeitura: number | null;
+  status: DigitalizacaoFolha["status"];
+  processadoAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}): DigitalizacaoFolha {
+  return {
+    id: value.id,
+    owner_id: "",
+    avaliacao_id: value.avaliacaoId,
+    folha_id: value.folhaId,
+    aluno_id: value.alunoId,
+    arquivo_original: value.arquivoOriginal,
+    mime_original: value.mimeOriginal,
+    pagina_origem: value.paginaOrigem,
+    rotacao: value.rotacao,
+    recorte: value.recorte as Json,
+    storage_path: value.storagePath,
+    largura_px: value.larguraPx,
+    altura_px: value.alturaPx,
+    tamanho_bytes: value.tamanhoBytes,
+    modelo_id: value.modeloId,
+    pagina_modelo: value.paginaModelo,
+    resultado_leitura: value.resultadoLeitura as Json | null,
+    confianca_leitura: value.confiancaLeitura,
+    processado_at: value.processadoAt,
+    status: value.status,
+    created_at: value.createdAt,
+    updated_at: value.updatedAt,
+  };
 }
