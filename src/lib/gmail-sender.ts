@@ -1,7 +1,14 @@
-import { supabase } from "@/integrations/supabase/client";
+import {
+  GoogleAuthProvider,
+  linkWithPopup,
+  reauthenticateWithPopup,
+  type UserCredential,
+} from "firebase/auth";
+
+import { getCurrentUser } from "@/integrations/firebase/auth";
 
 export interface GmailConnection {
-  accessToken: "server";
+  accessToken: string;
   email: string;
   expiresAt: number;
 }
@@ -14,73 +21,104 @@ export interface GmailPdfMessage {
   filename?: string;
 }
 
-type OAuthStartResponse = {
-  connected?: boolean;
-  email?: string;
-  authorizationUrl?: string;
-  error?: string;
-  code?: string;
-};
-
-type FunctionErrorPayload = {
-  error?: string;
-  code?: string;
-};
-
-export const GMAIL_SETUP_AFTER_GOOGLE_LOGIN_KEY = "folha.gmail.setup-after-google-login";
-
-export function markGmailSetupAfterGoogleLogin(): void {
-  if (typeof window !== "undefined") sessionStorage.setItem(GMAIL_SETUP_AFTER_GOOGLE_LOGIN_KEY, "1");
-}
-
-export function clearGmailSetupAfterGoogleLogin(): void {
-  if (typeof window !== "undefined") sessionStorage.removeItem(GMAIL_SETUP_AFTER_GOOGLE_LOGIN_KEY);
-}
-
-export function shouldSetupGmailAfterGoogleLogin(): boolean {
-  return typeof window !== "undefined" && sessionStorage.getItem(GMAIL_SETUP_AFTER_GOOGLE_LOGIN_KEY) === "1";
-}
+const GMAIL_CONNECTION_KEY = "folha.gmail.firebase-connection";
+const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
+const TOKEN_LIFETIME_MS = 50 * 60 * 1000;
 
 export async function connectGmail({
   expectedEmail,
   force = false,
-  returnUrl,
 }: {
   clientId?: string;
   expectedEmail: string;
   force?: boolean;
   returnUrl?: string;
 }): Promise<GmailConnection> {
-  const payload = await callFunction<OAuthStartResponse>("gmail-oauth", {
-    returnUrl: returnUrl ?? window.location.href,
-    force,
+  const authenticatedEmail = normalizeEmail(expectedEmail);
+  const cached = readGmailConnection();
+
+  if (!force && isGmailConnectionValid(cached) && cached.email === authenticatedEmail) {
+    return cached;
+  }
+
+  const user = getCurrentUser();
+  if (!user) throw new Error("Sua sessão do Firebase expirou. Entre novamente.");
+
+  const provider = new GoogleAuthProvider();
+  provider.addScope("openid");
+  provider.addScope("email");
+  provider.addScope(GMAIL_SEND_SCOPE);
+  provider.setCustomParameters({
+    prompt: "consent",
+    login_hint: authenticatedEmail,
   });
 
-  if (payload.connected && payload.email) {
-    const connectedEmail = payload.email.trim().toLowerCase();
-    const authenticatedEmail = expectedEmail.trim().toLowerCase();
-    if (connectedEmail !== authenticatedEmail) {
+  let result: UserCredential;
+
+  try {
+    result = user.providerData.some((item) => item.providerId === GoogleAuthProvider.PROVIDER_ID)
+      ? await reauthenticateWithPopup(user, provider)
+      : await linkWithPopup(user, provider);
+  } catch (error) {
+    const code = readErrorCode(error);
+
+    if (code === "auth/provider-already-linked") {
+      result = await reauthenticateWithPopup(user, provider);
+    } else if (
+      code === "auth/credential-already-in-use" ||
+      code === "auth/email-already-in-use" ||
+      code === "auth/account-exists-with-different-credential"
+    ) {
       throw new Error(
-        `O Gmail autorizado (${connectedEmail}) não corresponde ao e-mail do professor (${authenticatedEmail}).`,
+        "Este Google já está associado a outra conta Firebase. Saia e entre diretamente com Google para autorizar o Gmail.",
       );
+    } else {
+      throw error;
     }
-    return { accessToken: "server", email: connectedEmail, expiresAt: Number.MAX_SAFE_INTEGER };
   }
 
-  if (payload.authorizationUrl) {
-    window.location.assign(payload.authorizationUrl);
-    return new Promise<GmailConnection>(() => undefined);
+  const googleCredential = GoogleAuthProvider.credentialFromResult(result);
+  const accessToken = googleCredential?.accessToken;
+  const connectedEmail = normalizeEmail(result.user.email ?? "");
+
+  if (!accessToken) {
+    throw new Error("O Google não forneceu a autorização de envio do Gmail.");
   }
 
-  throw new Error(payload.error || "Não foi possível autorizar o Gmail do professor.");
+  if (connectedEmail !== authenticatedEmail) {
+    throw new Error(
+      `O Gmail autorizado (${connectedEmail}) não corresponde ao e-mail do professor (${authenticatedEmail}).`,
+    );
+  }
+
+  const connection: GmailConnection = {
+    accessToken,
+    email: connectedEmail,
+    expiresAt: Date.now() + TOKEN_LIFETIME_MS,
+  };
+
+  saveGmailConnection(connection);
+  return connection;
 }
 
-export function isGmailConnectionValid(connection: GmailConnection | null): connection is GmailConnection {
-  return Boolean(connection?.email && connection.expiresAt > Date.now());
+export function getSavedGmailConnection(): GmailConnection | null {
+  return readGmailConnection();
 }
 
-export function disconnectGmail(_connection: GmailConnection | null): void {
-  // A autorização persistente é administrada no backend e na Conta Google do professor.
+export function isGmailConnectionValid(
+  connection: GmailConnection | null,
+): connection is GmailConnection {
+  return Boolean(
+    connection?.accessToken &&
+      connection.email &&
+      connection.expiresAt > Date.now() + 30_000,
+  );
+}
+
+export function disconnectGmail(_connection: GmailConnection | null = null): void {
+  if (typeof window !== "undefined") {
+    sessionStorage.removeItem(GMAIL_CONNECTION_KEY);
+  }
 }
 
 export async function sendPdfWithGmail(
@@ -88,71 +126,160 @@ export async function sendPdfWithGmail(
   message: GmailPdfMessage,
 ): Promise<void> {
   if (!isGmailConnectionValid(connection)) {
-    throw new Error("O Gmail do professor ainda não está pronto para envio.");
+    throw new Error("A autorização do Gmail expirou. Autorize novamente antes de enviar.");
   }
 
-  const attachmentBytes = new Uint8Array(await message.pdf.arrayBuffer());
-  const response = await callFunction<FunctionErrorPayload & { sent?: boolean }>("gmail-send", {
-    to: message.to,
-    subject: message.subject,
-    text: message.text,
-    pdfBase64: bytesToBase64(attachmentBytes),
-    filename: message.filename ?? "devolutiva.pdf",
-  }, false);
+  const to = normalizeEmail(message.to);
+  const subject = message.subject.trim();
 
-  if (response.code === "gmail_authorization_required") {
-    markGmailSetupAfterGoogleLogin();
-    await connectGmail({
-      expectedEmail: connection.email,
-      force: true,
-      returnUrl: window.location.href,
-    });
-    return;
+  if (!subject) throw new Error("O assunto do e-mail não foi informado.");
+  if (!message.pdf.size) throw new Error("O PDF da devolutiva está vazio.");
+  if (message.pdf.size > 12 * 1024 * 1024) {
+    throw new Error("O PDF é grande demais para envio pelo Gmail.");
   }
 
-  if (!response.sent) {
-    throw new Error(response.error || "O Gmail não confirmou o envio da devolutiva.");
+  const pdfBytes = new Uint8Array(await message.pdf.arrayBuffer());
+  const pdfBase64 = bytesToBase64(pdfBytes);
+  const filename = sanitizeFilename(message.filename ?? "devolutiva.pdf");
+  const boundary = `feedback_${crypto.randomUUID().replaceAll("-", "")}`;
+  const mime = [
+    `From: ${connection.email}`,
+    `To: ${to}`,
+    `Subject: ${encodeMimeHeader(subject)}`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    wrapBase64(textToBase64(message.text)),
+    `--${boundary}`,
+    `Content-Type: application/pdf; name="${filename}"`,
+    "Content-Transfer-Encoding: base64",
+    `Content-Disposition: attachment; filename="${filename}"`,
+    "",
+    wrapBase64(pdfBase64),
+    `--${boundary}--`,
+    "",
+  ].join("\r\n");
+
+  const response = await fetch(
+    "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${connection.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        raw: toBase64Url(new TextEncoder().encode(mime)),
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
+
+    if (response.status === 401 || response.status === 403) {
+      disconnectGmail(connection);
+      throw new Error("A autorização do Gmail expirou ou foi recusada. Autorize novamente.");
+    }
+
+    throw new Error(
+      payload.error?.message ?? `O Gmail recusou o envio (${response.status}).`,
+    );
   }
 }
 
-async function callFunction<T>(
-  name: string,
-  body: Record<string, unknown>,
-  throwOnHttpError = true,
-): Promise<T> {
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError || !sessionData.session) throw new Error("Sua sessão expirou. Entre novamente.");
+function readGmailConnection(): GmailConnection | null {
+  if (typeof window === "undefined") return null;
 
-  const supabaseUrl =
-    (import.meta.env as { VITE_SUPABASE_URL?: string }).VITE_SUPABASE_URL ??
-    (typeof process !== "undefined" ? process.env.SUPABASE_URL : undefined);
-  const publishableKey =
-    (import.meta.env as { VITE_SUPABASE_PUBLISHABLE_KEY?: string }).VITE_SUPABASE_PUBLISHABLE_KEY ??
-    (typeof process !== "undefined" ? process.env.SUPABASE_PUBLISHABLE_KEY : undefined);
-  if (!supabaseUrl || !publishableKey) throw new Error("A conexão com o backend não está configurada.");
+  try {
+    const raw = sessionStorage.getItem(GMAIL_CONNECTION_KEY);
+    if (!raw) return null;
 
-  const response = await fetch(`${supabaseUrl}/functions/v1/${name}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${sessionData.session.access_token}`,
-      apikey: publishableKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+    const parsed = JSON.parse(raw) as Partial<GmailConnection>;
+    if (
+      typeof parsed.accessToken !== "string" ||
+      typeof parsed.email !== "string" ||
+      typeof parsed.expiresAt !== "number"
+    ) {
+      return null;
+    }
 
-  const payload = await response.json().catch(() => ({})) as T & FunctionErrorPayload;
-  if (!response.ok && throwOnHttpError) {
-    throw new Error(payload.error || `A função ${name} falhou (${response.status}).`);
+    return {
+      accessToken: parsed.accessToken,
+      email: parsed.email,
+      expiresAt: parsed.expiresAt,
+    };
+  } catch {
+    return null;
   }
-  return payload as T;
+}
+
+function saveGmailConnection(connection: GmailConnection): void {
+  if (typeof window !== "undefined") {
+    sessionStorage.setItem(GMAIL_CONNECTION_KEY, JSON.stringify(connection));
+  }
+}
+
+function normalizeEmail(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+    throw new Error("Informe um endereço de e-mail válido.");
+  }
+  return normalized;
+}
+
+function sanitizeFilename(value: string): string {
+  const sanitized = value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "")
+    .slice(0, 120);
+
+  return sanitized.toLowerCase().endsWith(".pdf")
+    ? sanitized
+    : `${sanitized || "devolutiva"}.pdf`;
+}
+
+function encodeMimeHeader(value: string): string {
+  return `=?UTF-8?B?${textToBase64(value)}?=`;
+}
+
+function textToBase64(value: string): string {
+  return bytesToBase64(new TextEncoder().encode(value));
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
   const chunkSize = 0x8000;
+
   for (let offset = 0; offset < bytes.length; offset += chunkSize) {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
   }
+
   return btoa(binary);
+}
+
+function toBase64Url(bytes: Uint8Array): string {
+  return bytesToBase64(bytes)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/g, "");
+}
+
+function wrapBase64(value: string): string {
+  return value.match(/.{1,76}/g)?.join("\r\n") ?? "";
+}
+
+function readErrorCode(error: unknown): string {
+  return error && typeof error === "object" && "code" in error
+    ? String((error as { code?: unknown }).code ?? "")
+    : "";
 }
