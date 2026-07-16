@@ -1,3 +1,4 @@
+import { QueryFetchPolicy } from "firebase/data-connect";
 import {
   atualizarAluno,
   atualizarTurma,
@@ -14,6 +15,10 @@ import {
 } from "@assess-buddy/dataconnect";
 
 import { getFirebaseDataConnect } from "./dataconnect";
+
+const SERVER_QUERY_OPTIONS = {
+  fetchPolicy: QueryFetchPolicy.SERVER_ONLY,
+};
 
 export interface FirebaseProfessorProfile {
   uid: string;
@@ -73,7 +78,10 @@ export interface AtualizarAlunoInput extends CriarAlunoInput {
 }
 
 export async function buscarMeuPerfil(): Promise<FirebaseProfessorProfile | null> {
-  const result = await meuPerfil(getFirebaseDataConnect());
+  const result = await meuPerfil(
+    getFirebaseDataConnect(),
+    SERVER_QUERY_OPTIONS,
+  );
   const profile = result.data.professors[0];
 
   if (!profile) return null;
@@ -107,7 +115,10 @@ export async function salvarPerfil(
 }
 
 export async function listarTurmasFirebase(): Promise<FirebaseTurma[]> {
-  const result = await listarMinhasTurmas(getFirebaseDataConnect());
+  const result = await listarMinhasTurmas(
+    getFirebaseDataConnect(),
+    SERVER_QUERY_OPTIONS,
+  );
 
   return result.data.turmas.map(mapTurma);
 }
@@ -115,7 +126,11 @@ export async function listarTurmasFirebase(): Promise<FirebaseTurma[]> {
 export async function obterTurmaFirebase(
   id: string,
 ): Promise<FirebaseTurma | null> {
-  const result = await obterMinhaTurma(getFirebaseDataConnect(), { id });
+  const result = await obterMinhaTurma(
+    getFirebaseDataConnect(),
+    { id },
+    SERVER_QUERY_OPTIONS,
+  );
   const turma = result.data.turmas[0];
 
   return turma ? mapTurma(turma) : null;
@@ -175,9 +190,11 @@ export async function excluirTurmaFirebase(id: string): Promise<void> {
 export async function listarAlunosFirebase(
   turmaId: string,
 ): Promise<FirebaseAluno[]> {
-  const result = await listarMeusAlunosPorTurma(getFirebaseDataConnect(), {
-    turmaId,
-  });
+  const result = await listarMeusAlunosPorTurma(
+    getFirebaseDataConnect(),
+    { turmaId },
+    SERVER_QUERY_OPTIONS,
+  );
 
   return result.data.alunos.map(mapAluno);
 }
@@ -185,7 +202,11 @@ export async function listarAlunosFirebase(
 export async function obterAlunoFirebase(
   id: string,
 ): Promise<FirebaseAluno | null> {
-  const result = await obterMeuAluno(getFirebaseDataConnect(), { id });
+  const result = await obterMeuAluno(
+    getFirebaseDataConnect(),
+    { id },
+    SERVER_QUERY_OPTIONS,
+  );
   const aluno = result.data.alunos[0];
 
   return aluno ? mapAluno(aluno) : null;
@@ -322,7 +343,7 @@ async function readAfterWrite<T>(
 }
 
 function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+  return new Promise((resolve) => globalThis.setTimeout(resolve, milliseconds));
 }
 
 function normalizeRequiredText(value: string, errorMessage: string): string {
