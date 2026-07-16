@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { AnswerSheet } from "@/components/answer-sheet";
 import { AnswerSheetUploadPanel } from "@/components/answer-sheet-upload-panel";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -128,7 +129,7 @@ function AvaliacaoDetail() {
           <GabaritoTab avaliacaoId={id} />
         </TabsContent>
         <TabsContent value="folha" className="mt-4">
-          <FolhaTab avaliacao={avaliacao} />
+          <FolhaTab avaliacao={avaliacao} questoes={questoes} />
         </TabsContent>
         <TabsContent value="correcao" className="mt-4">
           <CorrecaoTab avaliacao={avaliacao} />
@@ -592,56 +593,210 @@ function GabaritoTab({ avaliacaoId }: { avaliacaoId: string }) {
   );
 }
 
-function FolhaTab({ avaliacao }: { avaliacao: Avaliacao }) {
+function FolhaTab({
+  avaliacao,
+  questoes,
+}: {
+  avaliacao: Avaliacao;
+  questoes: Questao[];
+}) {
   const alunosQuery = useQuery({
     queryKey: alunosKey(avaliacao.turma_id ?? ""),
     queryFn: () =>
-      avaliacao.turma_id ? listAlunosByTurma(avaliacao.turma_id) : Promise.resolve([]),
+      avaliacao.turma_id
+        ? listAlunosByTurma(avaliacao.turma_id)
+        : Promise.resolve([]),
     enabled: Boolean(avaliacao.turma_id),
   });
+
   const [alunoId, setAlunoId] = useState("");
   const [colunas, setColunas] = useState("2");
   const [linhas, setLinhas] = useState("35");
-  const [orientacao, setOrientacao] = useState<"portrait" | "landscape">("portrait");
+  const [orientacao, setOrientacao] =
+    useState<"portrait" | "landscape">("portrait");
+  const [previewOpen, setPreviewOpen] = useState(false);
 
-  const href = `/avaliacoes/${avaliacao.id}/folha?colunas=${colunas}&linhas=${linhas}&orientacao=${orientacao}${alunoId ? `&aluno=${encodeURIComponent(alunoId)}` : ""}`;
+  const maxColumns = orientacao === "portrait" ? 4 : 6;
+  const maxRows = orientacao === "portrait" ? 35 : 25;
+
+  const columns = Math.min(
+    maxColumns,
+    Math.max(1, Number(colunas) || 2),
+  );
+
+  const rowsPerColumn = Math.min(
+    maxRows,
+    Math.max(5, Number(linhas) || maxRows),
+  );
+
+  const aluno =
+    alunosQuery.data?.find((item) => item.id === alunoId) ?? null;
+
+  const layout = {
+    columns,
+    rowsPerColumn,
+    orientation: orientacao,
+  };
+
+  if (previewOpen) {
+    return (
+      <div className="overflow-hidden rounded-lg border border-border bg-muted/30">
+        <div className="no-print flex flex-wrap items-center justify-between gap-3 border-b border-border bg-card p-4">
+          <div>
+            <h2 className="font-semibold">
+              {aluno ? `Folha de ${aluno.nome}` : "Folha genérica"}
+            </h2>
+
+            <p className="mt-1 text-xs text-muted-foreground">
+              {columns} coluna{columns > 1 ? "s" : ""} · até{" "}
+              {rowsPerColumn} itens por coluna ·{" "}
+              {orientacao === "portrait" ? "vertical" : "horizontal"}
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPreviewOpen(false)}
+            >
+              Voltar à configuração
+            </Button>
+
+            <Button
+              type="button"
+              onClick={() => window.print()}
+            >
+              Imprimir
+            </Button>
+          </div>
+        </div>
+
+        <div className="answer-sheet-inline-viewport max-h-[78vh] max-w-full overflow-auto">
+          <div className="answer-sheet-export-root">
+            <AnswerSheet
+              avaliacao={avaliacao}
+              questoes={questoes}
+              aluno={aluno}
+              layout={layout}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
       <div className="rounded-lg border border-border bg-card p-6">
         <FileText className="h-10 w-10 text-primary" />
-        <h2 className="mt-4 text-xl font-semibold">Folha de respostas</h2>
+
+        <h2 className="mt-4 text-xl font-semibold">
+          Folha de respostas
+        </h2>
+
         <p className="mt-2 text-sm text-muted-foreground">
-          A prévia, impressão e exportação continuam na página dedicada, agora alimentada pelos dados do Firebase.
+          Visualize e imprima a folha sem sair desta aba.
         </p>
-        <Button asChild className="mt-5">
-          <a href={href}>Abrir prévia da folha</a>
+
+        <Button
+          type="button"
+          className="mt-5"
+          disabled={questoes.length === 0}
+          onClick={() => setPreviewOpen(true)}
+        >
+          Abrir prévia da folha
         </Button>
+
+        {questoes.length === 0 && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Cadastre ao menos uma questão antes de abrir a prévia.
+          </p>
+        )}
       </div>
 
-      <div className="rounded-lg border border-border bg-card p-4 space-y-4">
+      <div className="space-y-4 rounded-lg border border-border bg-card p-4">
         <h3 className="font-semibold">Configuração rápida</h3>
+
         <div className="space-y-1.5">
           <Label>Orientação</Label>
-          <Select value={orientacao} onValueChange={(value) => setOrientacao(value as "portrait" | "landscape")}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="portrait">Vertical</SelectItem><SelectItem value="landscape">Horizontal</SelectItem></SelectContent>
+
+          <Select
+            value={orientacao}
+            onValueChange={(value) => {
+              const next = value as "portrait" | "landscape";
+              setOrientacao(next);
+
+              if (next === "landscape" && Number(linhas) > 25) {
+                setLinhas("25");
+              }
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+
+            <SelectContent>
+              <SelectItem value="portrait">Vertical</SelectItem>
+              <SelectItem value="landscape">Horizontal</SelectItem>
+            </SelectContent>
           </Select>
         </div>
+
         <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5"><Label>Colunas</Label><Input type="number" min={1} max={orientacao === "portrait" ? 4 : 6} value={colunas} onChange={(event) => setColunas(event.target.value)} /></div>
-          <div className="space-y-1.5"><Label>Itens/coluna</Label><Input type="number" min={5} max={35} value={linhas} onChange={(event) => setLinhas(event.target.value)} /></div>
+          <div className="space-y-1.5">
+            <Label>Colunas</Label>
+
+            <Input
+              type="number"
+              min={1}
+              max={maxColumns}
+              value={colunas}
+              onChange={(event) => setColunas(event.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Itens/coluna</Label>
+
+            <Input
+              type="number"
+              min={5}
+              max={maxRows}
+              value={linhas}
+              onChange={(event) => setLinhas(event.target.value)}
+            />
+          </div>
         </div>
+
         {avaliacao.turma_id && (
           <div className="space-y-1.5">
             <Label>Aluno pré-preenchido</Label>
-            <Select value={alunoId || "generic"} onValueChange={(value) => setAlunoId(value === "generic" ? "" : value)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+
+            <Select
+              value={alunoId || "generic"}
+              onValueChange={(value) =>
+                setAlunoId(value === "generic" ? "" : value)
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+
               <SelectContent>
-                <SelectItem value="generic">Folha genérica</SelectItem>
-                {alunosQuery.data?.filter((aluno) => /^\d+$/.test(aluno.matricula ?? "")).map((aluno) => (
-                  <SelectItem key={aluno.id} value={aluno.id}>{aluno.nome} · {aluno.matricula}</SelectItem>
-                ))}
+                <SelectItem value="generic">
+                  Folha genérica
+                </SelectItem>
+
+                {alunosQuery.data
+                  ?.filter((item) =>
+                    /^[0-9]+$/.test(item.matricula ?? "")
+                  )
+                  .map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.nome} · {item.matricula}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           </div>
@@ -650,7 +805,6 @@ function FolhaTab({ avaliacao }: { avaliacao: Avaliacao }) {
     </div>
   );
 }
-
 function CorrecaoTab({ avaliacao }: { avaliacao: Avaliacao }) {
   const avaliacaoId = avaliacao.id;
   const turmaId = avaliacao.turma_id;
