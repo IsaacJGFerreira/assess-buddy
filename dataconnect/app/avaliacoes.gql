@@ -1,0 +1,198 @@
+query ListarMinhasAvaliacoes @auth(level: USER) {
+  avaliacoes(
+    where: { ownerUid: { eq_expr: "auth.uid" } }
+    orderBy: [{ createdAt: DESC }]
+  ) {
+    id
+    turmaId
+    titulo
+    disciplina
+    dataAplicacao
+    valorTotal
+    instrucoes
+    comentarioDevolutiva
+    status
+    createdAt
+    updatedAt
+    turma {
+      id
+      nome
+      serie
+      ano
+    }
+  }
+}
+
+query ObterMinhaAvaliacao($id: UUID!) @auth(level: USER) {
+  avaliacoes(
+    where: {
+      id: { eq: $id }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+    limit: 1
+  ) {
+    id
+    turmaId
+    titulo
+    disciplina
+    dataAplicacao
+    valorTotal
+    instrucoes
+    comentarioDevolutiva
+    status
+    createdAt
+    updatedAt
+    turma {
+      id
+      nome
+      serie
+      ano
+    }
+  }
+}
+
+mutation CriarAvaliacaoComTurma(
+  $turmaId: UUID!
+  $titulo: String!
+  $disciplina: String
+  $dataAplicacao: Date
+  $valorTotal: Float!
+  $instrucoes: String
+  $comentarioDevolutiva: String
+  $status: StatusAvaliacao!
+) @auth(level: USER) @transaction {
+  query @redact {
+    turmas(
+      where: {
+        id: { eq: $turmaId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(expr: "this.size() == 1", message: "Turma não encontrada.") {
+      id
+    }
+  }
+
+  avaliacao_insert(
+    data: {
+      ownerUid_expr: "auth.uid"
+      turmaId: $turmaId
+      titulo: $titulo
+      disciplina: $disciplina
+      dataAplicacao: $dataAplicacao
+      valorTotal: $valorTotal
+      instrucoes: $instrucoes
+      comentarioDevolutiva: $comentarioDevolutiva
+      status: $status
+    }
+  )
+}
+
+mutation CriarAvaliacaoSemTurma(
+  $titulo: String!
+  $disciplina: String
+  $dataAplicacao: Date
+  $valorTotal: Float!
+  $instrucoes: String
+  $comentarioDevolutiva: String
+  $status: StatusAvaliacao!
+) @auth(level: USER) @transaction {
+  avaliacao_insert(
+    data: {
+      ownerUid_expr: "auth.uid"
+      titulo: $titulo
+      disciplina: $disciplina
+      dataAplicacao: $dataAplicacao
+      valorTotal: $valorTotal
+      instrucoes: $instrucoes
+      comentarioDevolutiva: $comentarioDevolutiva
+      status: $status
+    }
+  )
+}
+
+mutation AtualizarAvaliacaoComTurma(
+  $id: UUID!
+  $turmaId: UUID!
+  $titulo: String!
+  $disciplina: String
+  $dataAplicacao: Date
+  $valorTotal: Float!
+  $instrucoes: String
+  $comentarioDevolutiva: String
+  $status: StatusAvaliacao!
+) @auth(level: USER) @transaction {
+  query @redact {
+    turmas(
+      where: {
+        id: { eq: $turmaId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(expr: "this.size() == 1", message: "Turma não encontrada.") {
+      id
+    }
+  }
+
+  avaliacao_update(
+    first: {
+      where: {
+        id: { eq: $id }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+    }
+    data: {
+      turmaId: $turmaId
+      titulo: $titulo
+      disciplina: $disciplina
+      dataAplicacao: $dataAplicacao
+      valorTotal: $valorTotal
+      instrucoes: $instrucoes
+      comentarioDevolutiva: $comentarioDevolutiva
+      status: $status
+      updatedAt_expr: "request.time"
+    }
+  ) @check(expr: "this != null", message: "Avaliação não encontrada.")
+}
+
+mutation AtualizarAvaliacaoSemTurma(
+  $id: UUID!
+  $titulo: String!
+  $disciplina: String
+  $dataAplicacao: Date
+  $valorTotal: Float!
+  $instrucoes: String
+  $comentarioDevolutiva: String
+  $status: StatusAvaliacao!
+) @auth(level: USER) @transaction {
+  avaliacao_update(
+    first: {
+      where: {
+        id: { eq: $id }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+    }
+    data: {
+      turmaId: null
+      titulo: $titulo
+      disciplina: $disciplina
+      dataAplicacao: $dataAplicacao
+      valorTotal: $valorTotal
+      instrucoes: $instrucoes
+      comentarioDevolutiva: $comentarioDevolutiva
+      status: $status
+      updatedAt_expr: "request.time"
+    }
+  ) @check(expr: "this != null", message: "Avaliação não encontrada.")
+}
+
+mutation ExcluirAvaliacao($id: UUID!) @auth(level: USER) @transaction {
+  avaliacao_delete(
+    first: {
+      where: {
+        id: { eq: $id }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+    }
+  ) @check(expr: "this != null", message: "Avaliação não encontrada.")
+}

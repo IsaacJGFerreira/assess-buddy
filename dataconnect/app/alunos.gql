@@ -1,0 +1,123 @@
+query ListarMeusAlunosPorTurma($turmaId: UUID!) @auth(level: USER) {
+  alunos(
+    where: {
+      turmaId: { eq: $turmaId }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+    orderBy: [{ chamada: ASC }, { nome: ASC }]
+  ) {
+    id
+    turmaId
+    nome
+    matricula
+    chamada
+    email
+    createdAt
+    updatedAt
+  }
+}
+
+query ObterMeuAluno($id: UUID!) @auth(level: USER) {
+  alunos(
+    where: {
+      id: { eq: $id }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+    limit: 1
+  ) {
+    id
+    turmaId
+    nome
+    matricula
+    chamada
+    email
+    createdAt
+    updatedAt
+    turma {
+      id
+      nome
+      serie
+      ano
+    }
+  }
+}
+
+mutation CriarAluno(
+  $turmaId: UUID!
+  $nome: String!
+  $matricula: String
+  $chamada: Int
+  $email: String
+) @auth(level: USER) @transaction {
+  query @redact {
+    turmas(
+      where: {
+        id: { eq: $turmaId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(expr: "this.size() == 1", message: "Turma não encontrada.") {
+      id
+    }
+  }
+
+  aluno_insert(
+    data: {
+      ownerUid_expr: "auth.uid"
+      turmaId: $turmaId
+      nome: $nome
+      matricula: $matricula
+      chamada: $chamada
+      email: $email
+    }
+  )
+}
+
+mutation AtualizarAluno(
+  $id: UUID!
+  $turmaId: UUID!
+  $nome: String!
+  $matricula: String
+  $chamada: Int
+  $email: String
+) @auth(level: USER) @transaction {
+  query @redact {
+    turmas(
+      where: {
+        id: { eq: $turmaId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(expr: "this.size() == 1", message: "Turma não encontrada.") {
+      id
+    }
+  }
+
+  aluno_update(
+    first: {
+      where: {
+        id: { eq: $id }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+    }
+    data: {
+      turmaId: $turmaId
+      nome: $nome
+      matricula: $matricula
+      chamada: $chamada
+      email: $email
+      updatedAt_expr: "request.time"
+    }
+  ) @check(expr: "this != null", message: "Aluno não encontrado.")
+}
+
+mutation ExcluirAluno($id: UUID!) @auth(level: USER) @transaction {
+  aluno_delete(
+    first: {
+      where: {
+        id: { eq: $id }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+    }
+  ) @check(expr: "this != null", message: "Aluno não encontrado.")
+}

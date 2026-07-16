@@ -33,7 +33,8 @@ enum StatusEnvioDevolutiva {
   ERRO
 }
 
-type Professor @table(key: "uid") {
+type Professor
+  @table(key: "uid", singular: "professor", plural: "professors") {
   uid: String! @default(expr: "auth.uid")
   nome: String
   email: String
@@ -42,7 +43,8 @@ type Professor @table(key: "uid") {
   updatedAt: Timestamp! @default(expr: "request.time")
 }
 
-type Turma @table(key: "id") {
+type Turma
+  @table(key: "id", singular: "turma", plural: "turmas") {
   id: UUID! @default(expr: "uuidV4()")
   ownerUid: String! @default(expr: "auth.uid")
   owner: Professor! @ref(fields: "ownerUid", references: "uid")
@@ -53,7 +55,8 @@ type Turma @table(key: "id") {
   updatedAt: Timestamp! @default(expr: "request.time")
 }
 
-type Aluno @table(key: "id") {
+type Aluno
+  @table(key: "id", singular: "aluno", plural: "alunos") {
   id: UUID! @default(expr: "uuidV4()")
   ownerUid: String! @default(expr: "auth.uid")
   owner: Professor! @ref(fields: "ownerUid", references: "uid")
@@ -67,7 +70,8 @@ type Aluno @table(key: "id") {
   updatedAt: Timestamp! @default(expr: "request.time")
 }
 
-type Avaliacao @table(key: "id") {
+type Avaliacao
+  @table(key: "id", singular: "avaliacao", plural: "avaliacoes") {
   id: UUID! @default(expr: "uuidV4()")
   ownerUid: String! @default(expr: "auth.uid")
   owner: Professor! @ref(fields: "ownerUid", references: "uid")
@@ -85,7 +89,7 @@ type Avaliacao @table(key: "id") {
 }
 
 type Questao
-  @table(key: "id")
+  @table(key: "id", singular: "questao", plural: "questoes")
   @unique(fields: ["avaliacaoId", "numero"]) {
   id: UUID! @default(expr: "uuidV4()")
   ownerUid: String! @default(expr: "auth.uid")
@@ -109,7 +113,7 @@ type Questao
 }
 
 type RespostaAluno
-  @table(key: "id")
+  @table(key: "id", singular: "respostaAluno", plural: "respostasAluno")
   @unique(fields: ["alunoId", "questaoId"]) {
   id: UUID! @default(expr: "uuidV4()")
   ownerUid: String! @default(expr: "auth.uid")
@@ -128,7 +132,11 @@ type RespostaAluno
 }
 
 type ModeloFolhaResposta
-  @table(key: "id")
+  @table(
+    key: "id"
+    singular: "modeloFolhaResposta"
+    plural: "modelosFolhaResposta"
+  )
   @unique(fields: ["avaliacaoId", "versao"]) {
   id: UUID! @default(expr: "uuidV4()")
   ownerUid: String! @default(expr: "auth.uid")
@@ -144,7 +152,7 @@ type ModeloFolhaResposta
 }
 
 type FolhaResposta
-  @table(key: "id")
+  @table(key: "id", singular: "folhaResposta", plural: "folhasResposta")
   @unique(fields: ["modeloId", "alunoId"]) {
   id: UUID! @default(expr: "uuidV4()")
   ownerUid: String! @default(expr: "auth.uid")
@@ -160,7 +168,12 @@ type FolhaResposta
   createdAt: Timestamp! @default(expr: "request.time")
 }
 
-type DigitalizacaoFolha @table(key: "id") {
+type DigitalizacaoFolha
+  @table(
+    key: "id"
+    singular: "digitalizacaoFolha"
+    plural: "digitalizacoesFolha"
+  ) {
   id: UUID! @default(expr: "uuidV4()")
   ownerUid: String! @default(expr: "auth.uid")
   owner: Professor! @ref(fields: "ownerUid", references: "uid")
@@ -190,7 +203,12 @@ type DigitalizacaoFolha @table(key: "id") {
   updatedAt: Timestamp! @default(expr: "request.time")
 }
 
-type EnvioDevolutiva @table(key: "id") {
+type EnvioDevolutiva
+  @table(
+    key: "id"
+    singular: "envioDevolutiva"
+    plural: "enviosDevolutiva"
+  ) {
   id: UUID! @default(expr: "uuidV4()")
   ownerUid: String! @default(expr: "auth.uid")
   owner: Professor! @ref(fields: "ownerUid", references: "uid")
@@ -208,7 +226,12 @@ type EnvioDevolutiva @table(key: "id") {
   createdAt: Timestamp! @default(expr: "request.time")
 }
 
-type AutorizacaoGmail @table(key: "owner") {
+type AutorizacaoGmail
+  @table(
+    key: "owner"
+    singular: "autorizacaoGmail"
+    plural: "autorizacoesGmail"
+  ) {
   ownerUid: String! @default(expr: "auth.uid")
   owner: Professor! @ref(fields: "ownerUid", references: "uid")
   googleEmail: String!

@@ -1,0 +1,29 @@
+query MeuPerfil @auth(level: USER) {
+  professors(
+    where: { uid: { eq_expr: "auth.uid" } }
+    limit: 1
+  ) {
+    uid
+    nome
+    email
+    escola
+    createdAt
+    updatedAt
+  }
+}
+
+mutation SalvarMeuPerfil(
+  $nome: String
+  $email: String
+  $escola: String
+) @auth(level: USER) @transaction {
+  professor_upsert(
+    data: {
+      uid_expr: "auth.uid"
+      nome: $nome
+      email: $email
+      escola: $escola
+      updatedAt_expr: "request.time"
+    }
+  )
+}
