@@ -176,11 +176,22 @@ export async function ensureFirebaseProfile(user: User): Promise<void> {
     return;
   }
 
-  await salvarPerfil({
-    nome: nome ?? current?.nome ?? null,
-    email: email ?? current?.email ?? null,
-    escola: current?.escola ?? null,
-  });
+  try {
+    await salvarPerfil({
+      nome: nome ?? current?.nome ?? null,
+      email: email ?? current?.email ?? null,
+      escola: current?.escola ?? null,
+    });
+  } catch (error) {
+    if (isProfileReadAfterWriteError(error)) {
+      console.warn(
+        "O perfil foi salvo no Data Connect, mas ainda não apareceu na releitura imediata. O login continuará normalmente.",
+      );
+      return;
+    }
+
+    throw error;
+  }
 }
 
 export function authErrorMessage(error: unknown): string {
@@ -268,6 +279,13 @@ function readSupabaseDisplayName(metadata: unknown): string | null {
   return typeof candidate === "string" && candidate.trim()
     ? candidate.trim()
     : null;
+}
+
+function isProfileReadAfterWriteError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message === "O perfil foi salvo, mas não pôde ser carregado."
+  );
 }
 
 function isMissingSupabaseUser(error: { message?: string } | null): boolean {
