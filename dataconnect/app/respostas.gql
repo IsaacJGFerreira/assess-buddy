@@ -1,0 +1,178 @@
+query ListarMinhasRespostasPorAvaliacao(
+  $avaliacaoId: UUID!
+) @auth(level: USER) {
+  respostasAluno(
+    where: {
+      avaliacaoId: { eq: $avaliacaoId }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+    orderBy: [{ createdAt: ASC }]
+  ) {
+    id
+    avaliacaoId
+    alunoId
+    questaoId
+    resposta
+    notaManual
+    feedback
+    createdAt
+    updatedAt
+  }
+}
+
+query ListarMinhasRespostasPorAluno(
+  $avaliacaoId: UUID!
+  $alunoId: UUID!
+) @auth(level: USER) {
+  respostasAluno(
+    where: {
+      avaliacaoId: { eq: $avaliacaoId }
+      alunoId: { eq: $alunoId }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+    orderBy: [{ createdAt: ASC }]
+  ) {
+    id
+    avaliacaoId
+    alunoId
+    questaoId
+    resposta
+    notaManual
+    feedback
+    createdAt
+    updatedAt
+  }
+}
+
+query ObterMinhaRespostaPorAlunoEQuestao(
+  $avaliacaoId: UUID!
+  $alunoId: UUID!
+  $questaoId: UUID!
+) @auth(level: USER) {
+  respostasAluno(
+    where: {
+      avaliacaoId: { eq: $avaliacaoId }
+      alunoId: { eq: $alunoId }
+      questaoId: { eq: $questaoId }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+    limit: 1
+  ) {
+    id
+    avaliacaoId
+    alunoId
+    questaoId
+    resposta
+    notaManual
+    feedback
+    createdAt
+    updatedAt
+  }
+}
+
+mutation CriarRespostaAluno(
+  $avaliacaoId: UUID!
+  $turmaId: UUID!
+  $alunoId: UUID!
+  $questaoId: UUID!
+  $resposta: String
+  $notaManual: Float
+  $feedback: String
+) @auth(level: USER) @transaction {
+  query @redact {
+    avaliacoes(
+      where: {
+        id: { eq: $avaliacaoId }
+        turmaId: { eq: $turmaId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(
+      expr: "this.size() == 1"
+      message: "Avaliação não encontrada ou não vinculada à turma."
+    ) {
+      id
+    }
+
+    alunos(
+      where: {
+        id: { eq: $alunoId }
+        turmaId: { eq: $turmaId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(
+      expr: "this.size() == 1"
+      message: "Aluno não encontrado na turma da avaliação."
+    ) {
+      id
+    }
+
+    questoes(
+      where: {
+        id: { eq: $questaoId }
+        avaliacaoId: { eq: $avaliacaoId }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(
+      expr: "this.size() == 1"
+      message: "Questão não encontrada na avaliação."
+    ) {
+      id
+    }
+  }
+
+  respostaAluno_insert(
+    data: {
+      ownerUid_expr: "auth.uid"
+      avaliacaoId: $avaliacaoId
+      alunoId: $alunoId
+      questaoId: $questaoId
+      resposta: $resposta
+      notaManual: $notaManual
+      feedback: $feedback
+    }
+  )
+}
+
+mutation AtualizarRespostaAluno(
+  $id: UUID!
+  $resposta: String
+  $notaManual: Float
+  $feedback: String
+) @auth(level: USER) @transaction {
+  respostaAluno_update(
+    first: {
+      where: {
+        id: { eq: $id }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+    }
+    data: {
+      resposta: $resposta
+      notaManual: $notaManual
+      feedback: $feedback
+      updatedAt_expr: "request.time"
+    }
+  ) @check(
+    expr: "this != null"
+    message: "Resposta não encontrada."
+  )
+}
+
+mutation ExcluirRespostaAluno(
+  $id: UUID!
+) @auth(level: USER) @transaction {
+  respostaAluno_delete(
+    first: {
+      where: {
+        id: { eq: $id }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+    }
+  ) @check(
+    expr: "this != null"
+    message: "Resposta não encontrada."
+  )
+}

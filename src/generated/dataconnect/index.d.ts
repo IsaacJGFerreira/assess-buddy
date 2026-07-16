@@ -95,6 +95,17 @@ export interface AtualizarQuestaoVariables {
   respostaModeloImagemPath?: string | null;
 }
 
+export interface AtualizarRespostaAlunoData {
+  respostaAluno_update?: RespostaAluno_Key | null;
+}
+
+export interface AtualizarRespostaAlunoVariables {
+  id: UUIDString;
+  resposta?: string | null;
+  notaManual?: number | null;
+  feedback?: string | null;
+}
+
 export interface AtualizarTurmaData {
   turma_update?: Turma_Key | null;
 }
@@ -177,6 +188,20 @@ export interface CriarQuestaoVariables {
   respostaModeloImagemPath?: string | null;
 }
 
+export interface CriarRespostaAlunoData {
+  respostaAluno_insert: RespostaAluno_Key;
+}
+
+export interface CriarRespostaAlunoVariables {
+  avaliacaoId: UUIDString;
+  turmaId: UUIDString;
+  alunoId: UUIDString;
+  questaoId: UUIDString;
+  resposta?: string | null;
+  notaManual?: number | null;
+  feedback?: string | null;
+}
+
 export interface CriarTurmaData {
   turma_insert: Turma_Key;
 }
@@ -218,6 +243,14 @@ export interface ExcluirQuestaoData {
 }
 
 export interface ExcluirQuestaoVariables {
+  id: UUIDString;
+}
+
+export interface ExcluirRespostaAlunoData {
+  respostaAluno_delete?: RespostaAluno_Key | null;
+}
+
+export interface ExcluirRespostaAlunoVariables {
   id: UUIDString;
 }
 
@@ -295,6 +328,43 @@ export interface ListarMinhasQuestoesData {
 }
 
 export interface ListarMinhasQuestoesVariables {
+  avaliacaoId: UUIDString;
+}
+
+export interface ListarMinhasRespostasPorAlunoData {
+  respostasAluno: ({
+    id: UUIDString;
+    avaliacaoId: UUIDString;
+    alunoId: UUIDString;
+    questaoId: UUIDString;
+    resposta?: string | null;
+    notaManual?: number | null;
+    feedback?: string | null;
+    createdAt: TimestampString;
+    updatedAt: TimestampString;
+  } & RespostaAluno_Key)[];
+}
+
+export interface ListarMinhasRespostasPorAlunoVariables {
+  avaliacaoId: UUIDString;
+  alunoId: UUIDString;
+}
+
+export interface ListarMinhasRespostasPorAvaliacaoData {
+  respostasAluno: ({
+    id: UUIDString;
+    avaliacaoId: UUIDString;
+    alunoId: UUIDString;
+    questaoId: UUIDString;
+    resposta?: string | null;
+    notaManual?: number | null;
+    feedback?: string | null;
+    createdAt: TimestampString;
+    updatedAt: TimestampString;
+  } & RespostaAluno_Key)[];
+}
+
+export interface ListarMinhasRespostasPorAvaliacaoVariables {
   avaliacaoId: UUIDString;
 }
 
@@ -397,6 +467,26 @@ export interface ObterMinhaQuestaoData {
 
 export interface ObterMinhaQuestaoVariables {
   id: UUIDString;
+}
+
+export interface ObterMinhaRespostaPorAlunoEQuestaoData {
+  respostasAluno: ({
+    id: UUIDString;
+    avaliacaoId: UUIDString;
+    alunoId: UUIDString;
+    questaoId: UUIDString;
+    resposta?: string | null;
+    notaManual?: number | null;
+    feedback?: string | null;
+    createdAt: TimestampString;
+    updatedAt: TimestampString;
+  } & RespostaAluno_Key)[];
+}
+
+export interface ObterMinhaRespostaPorAlunoEQuestaoVariables {
+  avaliacaoId: UUIDString;
+  alunoId: UUIDString;
+  questaoId: UUIDString;
 }
 
 export interface ObterMinhaTurmaData {
@@ -671,6 +761,78 @@ export const excluirQuestaoRef: ExcluirQuestaoRef;
 
 export function excluirQuestao(vars: ExcluirQuestaoVariables): MutationPromise<ExcluirQuestaoData, ExcluirQuestaoVariables>;
 export function excluirQuestao(dc: DataConnect, vars: ExcluirQuestaoVariables): MutationPromise<ExcluirQuestaoData, ExcluirQuestaoVariables>;
+
+interface ListarMinhasRespostasPorAvaliacaoRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: ListarMinhasRespostasPorAvaliacaoVariables): QueryRef<ListarMinhasRespostasPorAvaliacaoData, ListarMinhasRespostasPorAvaliacaoVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: ListarMinhasRespostasPorAvaliacaoVariables): QueryRef<ListarMinhasRespostasPorAvaliacaoData, ListarMinhasRespostasPorAvaliacaoVariables>;
+  operationName: string;
+}
+export const listarMinhasRespostasPorAvaliacaoRef: ListarMinhasRespostasPorAvaliacaoRef;
+
+export function listarMinhasRespostasPorAvaliacao(vars: ListarMinhasRespostasPorAvaliacaoVariables, options?: ExecuteQueryOptions): QueryPromise<ListarMinhasRespostasPorAvaliacaoData, ListarMinhasRespostasPorAvaliacaoVariables>;
+export function listarMinhasRespostasPorAvaliacao(dc: DataConnect, vars: ListarMinhasRespostasPorAvaliacaoVariables, options?: ExecuteQueryOptions): QueryPromise<ListarMinhasRespostasPorAvaliacaoData, ListarMinhasRespostasPorAvaliacaoVariables>;
+
+interface ListarMinhasRespostasPorAlunoRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: ListarMinhasRespostasPorAlunoVariables): QueryRef<ListarMinhasRespostasPorAlunoData, ListarMinhasRespostasPorAlunoVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: ListarMinhasRespostasPorAlunoVariables): QueryRef<ListarMinhasRespostasPorAlunoData, ListarMinhasRespostasPorAlunoVariables>;
+  operationName: string;
+}
+export const listarMinhasRespostasPorAlunoRef: ListarMinhasRespostasPorAlunoRef;
+
+export function listarMinhasRespostasPorAluno(vars: ListarMinhasRespostasPorAlunoVariables, options?: ExecuteQueryOptions): QueryPromise<ListarMinhasRespostasPorAlunoData, ListarMinhasRespostasPorAlunoVariables>;
+export function listarMinhasRespostasPorAluno(dc: DataConnect, vars: ListarMinhasRespostasPorAlunoVariables, options?: ExecuteQueryOptions): QueryPromise<ListarMinhasRespostasPorAlunoData, ListarMinhasRespostasPorAlunoVariables>;
+
+interface ObterMinhaRespostaPorAlunoEQuestaoRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: ObterMinhaRespostaPorAlunoEQuestaoVariables): QueryRef<ObterMinhaRespostaPorAlunoEQuestaoData, ObterMinhaRespostaPorAlunoEQuestaoVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: ObterMinhaRespostaPorAlunoEQuestaoVariables): QueryRef<ObterMinhaRespostaPorAlunoEQuestaoData, ObterMinhaRespostaPorAlunoEQuestaoVariables>;
+  operationName: string;
+}
+export const obterMinhaRespostaPorAlunoEQuestaoRef: ObterMinhaRespostaPorAlunoEQuestaoRef;
+
+export function obterMinhaRespostaPorAlunoEQuestao(vars: ObterMinhaRespostaPorAlunoEQuestaoVariables, options?: ExecuteQueryOptions): QueryPromise<ObterMinhaRespostaPorAlunoEQuestaoData, ObterMinhaRespostaPorAlunoEQuestaoVariables>;
+export function obterMinhaRespostaPorAlunoEQuestao(dc: DataConnect, vars: ObterMinhaRespostaPorAlunoEQuestaoVariables, options?: ExecuteQueryOptions): QueryPromise<ObterMinhaRespostaPorAlunoEQuestaoData, ObterMinhaRespostaPorAlunoEQuestaoVariables>;
+
+interface CriarRespostaAlunoRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: CriarRespostaAlunoVariables): MutationRef<CriarRespostaAlunoData, CriarRespostaAlunoVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: CriarRespostaAlunoVariables): MutationRef<CriarRespostaAlunoData, CriarRespostaAlunoVariables>;
+  operationName: string;
+}
+export const criarRespostaAlunoRef: CriarRespostaAlunoRef;
+
+export function criarRespostaAluno(vars: CriarRespostaAlunoVariables): MutationPromise<CriarRespostaAlunoData, CriarRespostaAlunoVariables>;
+export function criarRespostaAluno(dc: DataConnect, vars: CriarRespostaAlunoVariables): MutationPromise<CriarRespostaAlunoData, CriarRespostaAlunoVariables>;
+
+interface AtualizarRespostaAlunoRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: AtualizarRespostaAlunoVariables): MutationRef<AtualizarRespostaAlunoData, AtualizarRespostaAlunoVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: AtualizarRespostaAlunoVariables): MutationRef<AtualizarRespostaAlunoData, AtualizarRespostaAlunoVariables>;
+  operationName: string;
+}
+export const atualizarRespostaAlunoRef: AtualizarRespostaAlunoRef;
+
+export function atualizarRespostaAluno(vars: AtualizarRespostaAlunoVariables): MutationPromise<AtualizarRespostaAlunoData, AtualizarRespostaAlunoVariables>;
+export function atualizarRespostaAluno(dc: DataConnect, vars: AtualizarRespostaAlunoVariables): MutationPromise<AtualizarRespostaAlunoData, AtualizarRespostaAlunoVariables>;
+
+interface ExcluirRespostaAlunoRef {
+  /* Allow users to create refs without passing in DataConnect */
+  (vars: ExcluirRespostaAlunoVariables): MutationRef<ExcluirRespostaAlunoData, ExcluirRespostaAlunoVariables>;
+  /* Allow users to pass in custom DataConnect instances */
+  (dc: DataConnect, vars: ExcluirRespostaAlunoVariables): MutationRef<ExcluirRespostaAlunoData, ExcluirRespostaAlunoVariables>;
+  operationName: string;
+}
+export const excluirRespostaAlunoRef: ExcluirRespostaAlunoRef;
+
+export function excluirRespostaAluno(vars: ExcluirRespostaAlunoVariables): MutationPromise<ExcluirRespostaAlunoData, ExcluirRespostaAlunoVariables>;
+export function excluirRespostaAluno(dc: DataConnect, vars: ExcluirRespostaAlunoVariables): MutationPromise<ExcluirRespostaAlunoData, ExcluirRespostaAlunoVariables>;
 
 interface ListarMinhasTurmasRef {
   /* Allow users to create refs without passing in DataConnect */

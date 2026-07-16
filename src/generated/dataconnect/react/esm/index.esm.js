@@ -1,4 +1,4 @@
-import { listarMeusAlunosPorTurmaRef, obterMeuAlunoRef, criarAlunoRef, atualizarAlunoRef, excluirAlunoRef, listarMinhasAvaliacoesRef, obterMinhaAvaliacaoRef, criarAvaliacaoComTurmaRef, criarAvaliacaoSemTurmaRef, atualizarAvaliacaoComTurmaRef, atualizarAvaliacaoSemTurmaRef, excluirAvaliacaoRef, meuPerfilRef, salvarMeuPerfilRef, listarMinhasQuestoesRef, obterMinhaQuestaoRef, criarQuestaoRef, atualizarQuestaoRef, excluirQuestaoRef, listarMinhasTurmasRef, obterMinhaTurmaRef, criarTurmaRef, atualizarTurmaRef, excluirTurmaRef, connectorConfig } from '../../esm/index.esm.js';
+import { listarMeusAlunosPorTurmaRef, obterMeuAlunoRef, criarAlunoRef, atualizarAlunoRef, excluirAlunoRef, listarMinhasAvaliacoesRef, obterMinhaAvaliacaoRef, criarAvaliacaoComTurmaRef, criarAvaliacaoSemTurmaRef, atualizarAvaliacaoComTurmaRef, atualizarAvaliacaoSemTurmaRef, excluirAvaliacaoRef, meuPerfilRef, salvarMeuPerfilRef, listarMinhasQuestoesRef, obterMinhaQuestaoRef, criarQuestaoRef, atualizarQuestaoRef, excluirQuestaoRef, listarMinhasRespostasPorAvaliacaoRef, listarMinhasRespostasPorAlunoRef, obterMinhaRespostaPorAlunoEQuestaoRef, criarRespostaAlunoRef, atualizarRespostaAlunoRef, excluirRespostaAlunoRef, listarMinhasTurmasRef, obterMinhaTurmaRef, criarTurmaRef, atualizarTurmaRef, excluirTurmaRef, connectorConfig } from '../../esm/index.esm.js';
 import { validateArgs, CallerSdkTypeEnum } from 'firebase/data-connect';
 import { useDataConnectQuery, useDataConnectMutation, validateReactArgs } from '@tanstack-query-firebase/react/data-connect';
 
@@ -136,6 +136,48 @@ export function useExcluirQuestao(dcOrOptions, options) {
   const { dc: dcInstance, vars: inputOpts } = validateArgs(connectorConfig, dcOrOptions, options);
   function refFactory(vars) {
     return excluirQuestaoRef(dcInstance, vars);
+  }
+  return useDataConnectMutation(refFactory, inputOpts, CallerSdkTypeEnum.GeneratedReact);
+}
+
+
+export function useListarMinhasRespostasPorAvaliacao(dcOrVars, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts } = validateReactArgs(connectorConfig, dcOrVars, varsOrOptions, options, true, true);
+  const ref = listarMinhasRespostasPorAvaliacaoRef(dcInstance, inputVars);
+  return useDataConnectQuery(ref, inputOpts, CallerSdkTypeEnum.GeneratedReact);
+}
+
+export function useListarMinhasRespostasPorAluno(dcOrVars, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts } = validateReactArgs(connectorConfig, dcOrVars, varsOrOptions, options, true, true);
+  const ref = listarMinhasRespostasPorAlunoRef(dcInstance, inputVars);
+  return useDataConnectQuery(ref, inputOpts, CallerSdkTypeEnum.GeneratedReact);
+}
+
+export function useObterMinhaRespostaPorAlunoEQuestao(dcOrVars, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts } = validateReactArgs(connectorConfig, dcOrVars, varsOrOptions, options, true, true);
+  const ref = obterMinhaRespostaPorAlunoEQuestaoRef(dcInstance, inputVars);
+  return useDataConnectQuery(ref, inputOpts, CallerSdkTypeEnum.GeneratedReact);
+}
+export function useCriarRespostaAluno(dcOrOptions, options) {
+  const { dc: dcInstance, vars: inputOpts } = validateArgs(connectorConfig, dcOrOptions, options);
+  function refFactory(vars) {
+    return criarRespostaAlunoRef(dcInstance, vars);
+  }
+  return useDataConnectMutation(refFactory, inputOpts, CallerSdkTypeEnum.GeneratedReact);
+}
+
+export function useAtualizarRespostaAluno(dcOrOptions, options) {
+  const { dc: dcInstance, vars: inputOpts } = validateArgs(connectorConfig, dcOrOptions, options);
+  function refFactory(vars) {
+    return atualizarRespostaAlunoRef(dcInstance, vars);
+  }
+  return useDataConnectMutation(refFactory, inputOpts, CallerSdkTypeEnum.GeneratedReact);
+}
+
+export function useExcluirRespostaAluno(dcOrOptions, options) {
+  const { dc: dcInstance, vars: inputOpts } = validateArgs(connectorConfig, dcOrOptions, options);
+  function refFactory(vars) {
+    return excluirRespostaAlunoRef(dcInstance, vars);
   }
   return useDataConnectMutation(refFactory, inputOpts, CallerSdkTypeEnum.GeneratedReact);
 }

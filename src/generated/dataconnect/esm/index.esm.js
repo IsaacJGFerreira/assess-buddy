@@ -256,6 +256,81 @@ export function excluirQuestao(dcOrVars, vars) {
   return executeMutation(excluirQuestaoRef(dcInstance, inputVars));
 }
 
+export const listarMinhasRespostasPorAvaliacaoRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return queryRef(dcInstance, 'ListarMinhasRespostasPorAvaliacao', inputVars);
+}
+listarMinhasRespostasPorAvaliacaoRef.operationName = 'ListarMinhasRespostasPorAvaliacao';
+
+export function listarMinhasRespostasPorAvaliacao(dcOrVars, varsOrOptions, options) {
+  
+  const { dc: dcInstance, vars: inputVars, options: inputOpts } = validateArgsWithOptions(connectorConfig, dcOrVars, varsOrOptions, options, true, true);
+  return executeQuery(listarMinhasRespostasPorAvaliacaoRef(dcInstance, inputVars), inputOpts && { fetchPolicy: inputOpts.fetchPolicy });
+}
+
+export const listarMinhasRespostasPorAlunoRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return queryRef(dcInstance, 'ListarMinhasRespostasPorAluno', inputVars);
+}
+listarMinhasRespostasPorAlunoRef.operationName = 'ListarMinhasRespostasPorAluno';
+
+export function listarMinhasRespostasPorAluno(dcOrVars, varsOrOptions, options) {
+  
+  const { dc: dcInstance, vars: inputVars, options: inputOpts } = validateArgsWithOptions(connectorConfig, dcOrVars, varsOrOptions, options, true, true);
+  return executeQuery(listarMinhasRespostasPorAlunoRef(dcInstance, inputVars), inputOpts && { fetchPolicy: inputOpts.fetchPolicy });
+}
+
+export const obterMinhaRespostaPorAlunoEQuestaoRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return queryRef(dcInstance, 'ObterMinhaRespostaPorAlunoEQuestao', inputVars);
+}
+obterMinhaRespostaPorAlunoEQuestaoRef.operationName = 'ObterMinhaRespostaPorAlunoEQuestao';
+
+export function obterMinhaRespostaPorAlunoEQuestao(dcOrVars, varsOrOptions, options) {
+  
+  const { dc: dcInstance, vars: inputVars, options: inputOpts } = validateArgsWithOptions(connectorConfig, dcOrVars, varsOrOptions, options, true, true);
+  return executeQuery(obterMinhaRespostaPorAlunoEQuestaoRef(dcInstance, inputVars), inputOpts && { fetchPolicy: inputOpts.fetchPolicy });
+}
+
+export const criarRespostaAlunoRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return mutationRef(dcInstance, 'CriarRespostaAluno', inputVars);
+}
+criarRespostaAlunoRef.operationName = 'CriarRespostaAluno';
+
+export function criarRespostaAluno(dcOrVars, vars) {
+  const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
+  return executeMutation(criarRespostaAlunoRef(dcInstance, inputVars));
+}
+
+export const atualizarRespostaAlunoRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return mutationRef(dcInstance, 'AtualizarRespostaAluno', inputVars);
+}
+atualizarRespostaAlunoRef.operationName = 'AtualizarRespostaAluno';
+
+export function atualizarRespostaAluno(dcOrVars, vars) {
+  const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
+  return executeMutation(atualizarRespostaAlunoRef(dcInstance, inputVars));
+}
+
+export const excluirRespostaAlunoRef = (dcOrVars, vars) => {
+  const { dc: dcInstance, vars: inputVars} = validateArgs(connectorConfig, dcOrVars, vars, true);
+  dcInstance._useGeneratedSdk();
+  return mutationRef(dcInstance, 'ExcluirRespostaAluno', inputVars);
+}
+excluirRespostaAlunoRef.operationName = 'ExcluirRespostaAluno';
+
+export function excluirRespostaAluno(dcOrVars, vars) {
+  const { dc: dcInstance, vars: inputVars } = validateArgs(connectorConfig, dcOrVars, vars, true);
+  return executeMutation(excluirRespostaAlunoRef(dcInstance, inputVars));
+}
+
 export const listarMinhasTurmasRef = (dc) => {
   const { dc: dcInstance} = validateArgs(connectorConfig, dc, undefined);
   dcInstance._useGeneratedSdk();
