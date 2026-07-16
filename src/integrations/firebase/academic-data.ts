@@ -1,3 +1,4 @@
+import { QueryFetchPolicy } from "firebase/data-connect";
 import {
   atualizarAluno,
   atualizarTurma,
@@ -14,6 +15,10 @@ import {
 } from "@assess-buddy/dataconnect";
 
 import { getFirebaseDataConnect } from "./dataconnect";
+
+const SERVER_QUERY_OPTIONS = {
+  fetchPolicy: QueryFetchPolicy.SERVER_ONLY,
+};
 
 export interface FirebaseProfessorProfile {
   uid: string;
@@ -73,7 +78,10 @@ export interface AtualizarAlunoInput extends CriarAlunoInput {
 }
 
 export async function buscarMeuPerfil(): Promise<FirebaseProfessorProfile | null> {
-  const result = await meuPerfil(getFirebaseDataConnect());
+  const result = await meuPerfil(
+    getFirebaseDataConnect(),
+    SERVER_QUERY_OPTIONS,
+  );
   const profile = result.data.professors[0];
 
   if (!profile) return null;
@@ -88,14 +96,16 @@ export async function buscarMeuPerfil(): Promise<FirebaseProfessorProfile | null
   };
 }
 
-export async function salvarPerfil(input: SalvarPerfilInput): Promise<FirebaseProfessorProfile> {
+export async function salvarPerfil(
+  input: SalvarPerfilInput,
+): Promise<FirebaseProfessorProfile> {
   await salvarMeuPerfil(getFirebaseDataConnect(), {
     nome: normalizeNullableText(input.nome),
     email: normalizeEmail(input.email),
     escola: normalizeNullableText(input.escola),
   });
 
-  const profile = await buscarMeuPerfil();
+  const profile = await readAfterWrite(buscarMeuPerfil);
 
   if (!profile) {
     throw new Error("O perfil foi salvo, mas não pôde ser carregado.");
@@ -105,26 +115,39 @@ export async function salvarPerfil(input: SalvarPerfilInput): Promise<FirebasePr
 }
 
 export async function listarTurmasFirebase(): Promise<FirebaseTurma[]> {
-  const result = await listarMinhasTurmas(getFirebaseDataConnect());
+  const result = await listarMinhasTurmas(
+    getFirebaseDataConnect(),
+    SERVER_QUERY_OPTIONS,
+  );
 
   return result.data.turmas.map(mapTurma);
 }
 
-export async function obterTurmaFirebase(id: string): Promise<FirebaseTurma | null> {
-  const result = await obterMinhaTurma(getFirebaseDataConnect(), { id });
+export async function obterTurmaFirebase(
+  id: string,
+): Promise<FirebaseTurma | null> {
+  const result = await obterMinhaTurma(
+    getFirebaseDataConnect(),
+    { id },
+    SERVER_QUERY_OPTIONS,
+  );
   const turma = result.data.turmas[0];
 
   return turma ? mapTurma(turma) : null;
 }
 
-export async function criarTurmaFirebase(input: CriarTurmaInput): Promise<FirebaseTurma> {
+export async function criarTurmaFirebase(
+  input: CriarTurmaInput,
+): Promise<FirebaseTurma> {
   const result = await criarTurma(getFirebaseDataConnect(), {
     nome: normalizeRequiredText(input.nome, "Informe o nome da turma."),
     serie: normalizeNullableText(input.serie),
     ano: input.ano ?? null,
   });
 
-  const turma = await obterTurmaFirebase(result.data.turma_insert.id);
+  const turma = await readAfterWrite(() =>
+    obterTurmaFirebase(result.data.turma_insert.id),
+  );
 
   if (!turma) {
     throw new Error("A turma foi criada, mas não pôde ser carregada.");
@@ -133,7 +156,9 @@ export async function criarTurmaFirebase(input: CriarTurmaInput): Promise<Fireba
   return turma;
 }
 
-export async function atualizarTurmaFirebase(input: AtualizarTurmaInput): Promise<FirebaseTurma> {
+export async function atualizarTurmaFirebase(
+  input: AtualizarTurmaInput,
+): Promise<FirebaseTurma> {
   const result = await atualizarTurma(getFirebaseDataConnect(), {
     id: input.id,
     nome: normalizeRequiredText(input.nome, "Informe o nome da turma."),
@@ -145,7 +170,7 @@ export async function atualizarTurmaFirebase(input: AtualizarTurmaInput): Promis
     throw new Error("Turma não encontrada ou sem permissão para alteração.");
   }
 
-  const turma = await obterTurmaFirebase(input.id);
+  const turma = await readAfterWrite(() => obterTurmaFirebase(input.id));
 
   if (!turma) {
     throw new Error("A turma foi atualizada, mas não pôde ser carregada.");
@@ -162,22 +187,34 @@ export async function excluirTurmaFirebase(id: string): Promise<void> {
   }
 }
 
-export async function listarAlunosFirebase(turmaId: string): Promise<FirebaseAluno[]> {
-  const result = await listarMeusAlunosPorTurma(getFirebaseDataConnect(), {
-    turmaId,
-  });
+export async function listarAlunosFirebase(
+  turmaId: string,
+): Promise<FirebaseAluno[]> {
+  const result = await listarMeusAlunosPorTurma(
+    getFirebaseDataConnect(),
+    { turmaId },
+    SERVER_QUERY_OPTIONS,
+  );
 
   return result.data.alunos.map(mapAluno);
 }
 
-export async function obterAlunoFirebase(id: string): Promise<FirebaseAluno | null> {
-  const result = await obterMeuAluno(getFirebaseDataConnect(), { id });
+export async function obterAlunoFirebase(
+  id: string,
+): Promise<FirebaseAluno | null> {
+  const result = await obterMeuAluno(
+    getFirebaseDataConnect(),
+    { id },
+    SERVER_QUERY_OPTIONS,
+  );
   const aluno = result.data.alunos[0];
 
   return aluno ? mapAluno(aluno) : null;
 }
 
-export async function criarAlunoFirebase(input: CriarAlunoInput): Promise<FirebaseAluno> {
+export async function criarAlunoFirebase(
+  input: CriarAlunoInput,
+): Promise<FirebaseAluno> {
   const result = await criarAluno(getFirebaseDataConnect(), {
     turmaId: input.turmaId,
     nome: normalizeRequiredText(input.nome, "Informe o nome do aluno."),
@@ -186,7 +223,9 @@ export async function criarAlunoFirebase(input: CriarAlunoInput): Promise<Fireba
     email: normalizeEmail(input.email),
   });
 
-  const aluno = await obterAlunoFirebase(result.data.aluno_insert.id);
+  const aluno = await readAfterWrite(() =>
+    obterAlunoFirebase(result.data.aluno_insert.id),
+  );
 
   if (!aluno) {
     throw new Error("O aluno foi criado, mas não pôde ser carregado.");
@@ -195,7 +234,9 @@ export async function criarAlunoFirebase(input: CriarAlunoInput): Promise<Fireba
   return aluno;
 }
 
-export async function criarAlunosFirebase(inputs: CriarAlunoInput[]): Promise<FirebaseAluno[]> {
+export async function criarAlunosFirebase(
+  inputs: CriarAlunoInput[],
+): Promise<FirebaseAluno[]> {
   const alunos: FirebaseAluno[] = [];
 
   for (const input of inputs) {
@@ -205,7 +246,9 @@ export async function criarAlunosFirebase(inputs: CriarAlunoInput[]): Promise<Fi
   return alunos;
 }
 
-export async function atualizarAlunoFirebase(input: AtualizarAlunoInput): Promise<FirebaseAluno> {
+export async function atualizarAlunoFirebase(
+  input: AtualizarAlunoInput,
+): Promise<FirebaseAluno> {
   const result = await atualizarAluno(getFirebaseDataConnect(), {
     id: input.id,
     turmaId: input.turmaId,
@@ -219,7 +262,7 @@ export async function atualizarAlunoFirebase(input: AtualizarAlunoInput): Promis
     throw new Error("Aluno não encontrado ou sem permissão para alteração.");
   }
 
-  const aluno = await obterAlunoFirebase(input.id);
+  const aluno = await readAfterWrite(() => obterAlunoFirebase(input.id));
 
   if (!aluno) {
     throw new Error("O aluno foi atualizado, mas não pôde ser carregado.");
@@ -276,6 +319,33 @@ function mapAluno(aluno: {
   };
 }
 
+async function readAfterWrite<T>(
+  read: () => Promise<T | null>,
+  attempts = 5,
+): Promise<T | null> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const value = await read();
+      if (value) return value;
+    } catch (error) {
+      lastError = error;
+    }
+
+    if (attempt < attempts - 1) {
+      await delay(100 * (attempt + 1));
+    }
+  }
+
+  if (lastError) throw lastError;
+  return null;
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, milliseconds));
+}
+
 function normalizeRequiredText(value: string, errorMessage: string): string {
   const normalized = value.trim();
 
@@ -286,7 +356,9 @@ function normalizeRequiredText(value: string, errorMessage: string): string {
   return normalized;
 }
 
-function normalizeNullableText(value: string | null | undefined): string | null {
+function normalizeNullableText(
+  value: string | null | undefined,
+): string | null {
   const normalized = value?.trim() ?? "";
 
   return normalized || null;
