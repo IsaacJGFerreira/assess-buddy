@@ -6,22 +6,16 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { LayoutDashboard, Users, FileText, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { signOut, waitForCompatibleAuth } from "@/integrations/firebase/auth";
-import {
-  clearGmailSetupAfterGoogleLogin,
-  connectGmail,
-  shouldSetupGmailAfterGoogleLogin,
-} from "@/lib/gmail-sender";
+import { signOut, waitForAuthenticatedUser } from "@/integrations/firebase/auth";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async () => {
-    const user = await waitForCompatibleAuth();
+    const user = await waitForAuthenticatedUser();
 
     if (!user) {
       throw redirect({ to: "/auth" });
@@ -42,47 +36,6 @@ function AuthedShell() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const { user } = Route.useRouteContext();
-  const gmailSetupStarted = useRef(false);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const gmailResult = params.get("gmail");
-
-    if (gmailResult === "connected") {
-      clearGmailSetupAfterGoogleLogin();
-      toast.success(
-        "Gmail do professor autorizado. As próximas devolutivas serão enviadas com um clique.",
-      );
-      clearGmailQueryParams(params);
-      return;
-    }
-
-    if (gmailResult === "error") {
-      clearGmailSetupAfterGoogleLogin();
-      toast.error(gmailErrorMessage(params.get("gmail_reason")));
-      clearGmailQueryParams(params);
-      return;
-    }
-
-    if (!shouldSetupGmailAfterGoogleLogin() || gmailSetupStarted.current || !user.email) {
-      return;
-    }
-
-    gmailSetupStarted.current = true;
-
-    void connectGmail({
-      expectedEmail: user.email,
-      returnUrl: `${window.location.origin}/painel`,
-    })
-      .then(() => {
-        clearGmailSetupAfterGoogleLogin();
-      })
-      .catch((error) => {
-        clearGmailSetupAfterGoogleLogin();
-        toast.error(error instanceof Error ? error.message : String(error));
-      });
-  }, [user.email]);
 
   async function handleSignOut() {
     try {
@@ -146,30 +99,4 @@ function AuthedShell() {
       </main>
     </div>
   );
-}
-
-function clearGmailQueryParams(params: URLSearchParams): void {
-  params.delete("gmail");
-  params.delete("gmail_reason");
-  const query = params.toString();
-
-  window.history.replaceState(
-    {},
-    "",
-    `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
-  );
-}
-
-function gmailErrorMessage(reason: string | null): string {
-  if (reason === "access_denied") return "A autorização do Gmail foi cancelada.";
-  if (reason === "email_mismatch") {
-    return "Autorize o mesmo Gmail usado no login do professor.";
-  }
-  if (reason === "missing_refresh_token") {
-    return "O Google não forneceu a autorização permanente. Tente entrar novamente com Google.";
-  }
-  if (reason === "expired") {
-    return "A autorização demorou demais e expirou. Entre novamente com Google.";
-  }
-  return "Não foi possível autorizar o Gmail do professor.";
 }
