@@ -1,71 +1,69 @@
-## Sistema de Folhas de Respostas — Plano de Construção
+# Fundação Firebase (Auth + Data Connect) — sem migrar dados
 
-Projeto grande. Proponho entregar em fases, começando pelo MVP descrito na seção 20 do briefing. Antes de codar, preciso alinhar alguns pontos.
+Objetivo desta etapa: iniciar o Firebase no front-end, autenticar por e-mail/senha e Google, observar sessão, proteger `/_authenticated` e preparar o cliente do Data Connect. Fluxos de dados de negócio (turmas, avaliações, respostas) e envio de e-mail via Gmail permanecem no Supabase até etapas seguintes.
 
-### Perguntas de escopo
+## Premissas
+- Banco Firebase inicia vazio; nenhuma migração de dados nesta etapa.
+- Firebase Auth passa a ser a **fonte única de verdade da sessão** já nesta fase — o Supabase Auth atual será desligado do fluxo do usuário. Sem isso, teríamos duas sessões concorrentes (Supabase e Firebase) e a guarda de rota ficaria ambígua.
+- Chamadas de dados que hoje usam `supabase` continuam funcionando enquanto o usuário estiver logado no Firebase, porque as tabelas Supabase seguirão acessíveis via chaves atuais até a próxima etapa. Onde houver RLS por `auth.uid()` do Supabase, isso deixará de funcionar assim que a sessão Supabase for descartada — mapeamos isso em "Riscos" e propomos mitigação.
+- Data Connect: o schema `dataconnect/` (serviceId `assess-buddy`, connector `app`) já existe. O SDK JS gerado é esperado em `src/generated/dataconnect` (`@assess-buddy/dataconnect`) mas ainda não está no repo — a geração/instalação do SDK fica para o momento em que formos consumir queries; nesta etapa só preparamos o cliente base.
 
-1. **Autenticação e multiusuário**: o sistema é para um único professor (uso local) ou vários professores com login? Isso define se ativamos Lovable Cloud (banco + auth) desde já.
-2. **Persistência**: começo com Lovable Cloud (Postgres, recomendado para dados de alunos/avaliações/gabaritos) ou prefere protótipo em `localStorage` primeiro?
-3. **Escopo da Fase 1 (MVP)**: confirma que atacamos exatamente a seção 20 do briefing? (turmas/alunos, avaliações, MC + C/E + numérica 000–999, gabarito, PDF da folha, digitação manual, correção automática, relatórios individual/turma, folha de devolutiva).
+## Variáveis de ambiente (nova adição em `.env` / `.env.example`)
+```
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_AUTH_DOMAIN=
+VITE_FIREBASE_PROJECT_ID=
+VITE_FIREBASE_APP_ID=
+VITE_FIREBASE_MESSAGING_SENDER_ID=  # opcional
+VITE_FIREBASE_STORAGE_BUCKET=       # opcional
+VITE_DATA_CONNECT_LOCATION=southamerica-east1
+VITE_DATA_CONNECT_SERVICE_ID=assess-buddy
+VITE_DATA_CONNECT_CONNECTOR_ID=app
+```
+As variáveis Supabase (`VITE_SUPABASE_*`) permanecem enquanto os módulos de dados/Gmail ainda dependerem delas.
 
-### Fase 1 — MVP (o que vou construir primeiro)
+## Arquivos a criar
+- `src/integrations/firebase/client.ts` — inicializa `initializeApp` a partir das `VITE_FIREBASE_*`, exporta `firebaseApp` e `auth = getAuth(firebaseApp)`. Guarda contra reinit em HMR.
+- `src/integrations/firebase/auth.ts` — helpers: `signInWithEmail`, `signUpWithEmail`, `signInWithGooglePopup` (usando `GoogleAuthProvider`), `signOut`, `onAuthChange(callback)`, `getCurrentUser()`.
+- `src/integrations/firebase/dataconnect.ts` — cria e exporta uma instância única do Data Connect via `getDataConnect({ connector: 'app', service: 'assess-buddy', location: 'southamerica-east1' })` a partir de `firebase/data-connect`. Sem queries ainda; apenas o cliente pronto para consumo posterior. Inclui um `TODO` apontando para o SDK gerado em `src/generated/dataconnect` quando for gerado.
+- `src/hooks/use-firebase-user.ts` — hook React que assina `onAuthStateChanged` e expõe `{ user, loading }`.
 
-**Modelo de dados (Lovable Cloud / Postgres)**
-- `turmas` (nome, série, ano)
-- `alunos` (nome, matrícula, chamada, turma_id)
-- `avaliacoes` (título, disciplina, turma_id, data, valor_total, instruções, status, versões)
-- `questoes` (avaliacao_id, número, tipo [`mc`|`ce`|`num`], alternativas, gabarito, valor, anulada, conteúdo)
-- `respostas` (avaliacao_id, aluno_id, questao_id, resposta, situação, pontuação)
-- `versoes_prova` (avaliacao_id, código, mapa de embaralhamento)
+## Arquivos a modificar
+- `.env` e `.env.example` — adicionar variáveis `VITE_FIREBASE_*` e as três `VITE_DATA_CONNECT_*`. Não remover as `VITE_SUPABASE_*` ainda.
+- `package.json` — adicionar dependência `firebase` (SDK web modular). Nada removido.
+- `src/routes/_authenticated/route.tsx` — trocar a checagem `supabase.auth.getUser()` no `beforeLoad` por espera na sessão do Firebase (`auth.authStateReady()` + `auth.currentUser`); trocar `signOut` para `firebaseSignOut`; manter o efeito do Gmail intacto (ainda depende de `user.email`, o que o `User` do Firebase também expõe). Manter `ssr: false`.
+- `src/routes/auth.tsx` — substituir formulários e botão Google para usarem os helpers Firebase (`signInWithEmail`, `signUpWithEmail`, `signInWithGooglePopup`). Manter o fluxo de "marcar Gmail para setup pós‑login" (`markGmailSetupAfterGoogleLogin`) como está — a etapa Gmail continua Supabase‑backed nesta fase, portanto avaliar se o setup automático de Gmail é acionado apenas quando o Supabase estiver realmente integrado; se necessário, esconder o CTA de Gmail temporariamente (decisão registrada como TODO, não removeremos código do Gmail).
+- `src/routes/__root.tsx` — trocar o `supabase.auth.onAuthStateChange` por `onAuthStateChanged` do Firebase para invalidar router/queries em SIGNED_IN/SIGNED_OUT/USER_UPDATED equivalentes.
 
-**Telas (rotas TanStack Start)**
-- `/` painel: lista de avaliações com status, turma, média
-- `/turmas` e `/turmas/$id` (CRUD + import CSV de alunos)
-- `/avaliacoes/nova` wizard: dados gerais → questões → gabarito → revisão
-- `/avaliacoes/$id` visão geral com abas: Configuração · Gabarito · Folhas · Correção · Relatórios
-- `/avaliacoes/$id/folha` preview + geração de PDF (react-pdf ou impressão via `window.print` com CSS print)
-- `/avaliacoes/$id/corrigir/$alunoId` digitação manual com atalhos de teclado
-- `/avaliacoes/$id/relatorio` turma + drill-down por questão
-- `/avaliacoes/$id/devolutiva/$alunoId` folha de devolutiva imprimível
+## Arquivos intencionalmente NÃO alterados nesta etapa
+- `src/integrations/supabase/*` (client, auth-attacher, auth-middleware, types) — permanecem para não quebrar módulos de dados/Gmail.
+- `src/start.ts` — mantém `attachSupabaseAuth` (as server functions atuais que dependem dele continuam ativas). Um `functionMiddleware` equivalente para Firebase ID token entra em etapa futura quando houver server fns Firebase.
+- `src/lib/gmail-sender.ts`, `supabase/functions/gmail-*` — inalterados.
+- Rotas de negócio em `_authenticated/*` que fazem queries via `supabase` — inalteradas.
 
-**Funcionalidades principais Fase 1**
-- Construtor de questões (adicionar, duplicar, reordenar, excluir)
-- Validação: soma de valores = valor_total, todas com gabarito, sem lacunas de numeração
-- Geração de PDF com: cabeçalho institucional, identificação do aluno, bolhas MC/CE, colunas C/D/U para numéricas 000–999, versão da prova, código
-- Folha genérica OU personalizada por aluno
-- Correção automática (comparação com gabarito, tratamento de anuladas, dupla marcação, em branco)
-- Recalcular notas quando o gabarito muda + histórico de alterações
-- Relatórios: média/mediana/max/min, % acerto por questão, distribuição por alternativa, ranking de conteúdos difíceis
-- Devolutiva com símbolos ✓ ✕ — ! e espaço "Correção do aluno"
+## Riscos de mistura entre duas autenticações
+1. **Sessões concorrentes**: manter Supabase Auth ativo em paralelo geraria duas fontes de verdade. Mitigação: nesta etapa, o Supabase Auth deixa de ser usado pelo app (nem login, nem `getUser`). O `supabase` client continua sendo importado apenas para leitura/escrita de dados; sem sessão, ele opera como `anon`.
+2. **RLS por `auth.uid()`**: qualquer política atual que exija usuário autenticado no Supabase deixará de aceitar as chamadas assim que descartarmos a sessão Supabase. Precisamos identificar antes de mergear quais tabelas exigem `authenticated`. Duas mitigações possíveis (a decidir na próxima etapa):
+   - (a) Afrouxar temporariamente policies para permitir `anon` em leituras não sensíveis, ou
+   - (b) Manter um "sign-in silencioso" de serviço no Supabase (não recomendado — reintroduz duas sessões).
+   Recomendo (a) apenas onde já for público; caso contrário, aceitar que rotas de negócio ficarão quebradas até migrarem para Data Connect. Este risco precisa ser confirmado com você antes da implementação.
+3. **Gmail OAuth**: o fluxo atual (`connectGmail`, edge functions `gmail-oauth`/`gmail-send`) casa o e-mail autorizado com `user.email` da sessão Supabase. Com Firebase, o `email` do usuário Google continua disponível, mas o backend `gmail-oauth` provavelmente identifica o professor pelo JWT do Supabase. Enquanto Gmail não for migrado, o CTA "Continuar com Google" pode disparar o setup Gmail sem que o backend reconheça o usuário. Mitigação: manter `markGmailSetupAfterGoogleLogin` porém desabilitar visualmente o fluxo Gmail (ou ignorar erros silenciosamente) até migrarmos Gmail. Registrado como TODO.
+4. **Server functions Supabase-protegidas**: `requireSupabaseAuth` + `attachSupabaseAuth` continuam presentes. Sem sessão Supabase, qualquer server fn que dependa deles retornará 401. Precisamos listar essas server fns antes de prosseguir. Mitigação nesta etapa: não removê-las; assumir que ficam inacessíveis até migração.
+5. **Prerender/SSR**: guarda `_authenticated` já é `ssr: false`, então `authStateReady` do Firebase é seguro no cliente. Nenhum loader público pode chamar código que dependa de Firebase Auth em SSR.
+6. **HMR duplicando `initializeApp`**: mitigado por guarda no `client.ts` (`getApps().length ? getApp() : initializeApp(...)`).
+7. **Data Connect sem SDK gerado**: se importarmos queries antes de rodar `firebase dataconnect:sdk:generate`, o build quebra. Mitigação: nesta etapa só preparamos `getDataConnect(...)`, sem importar do SDK gerado.
 
-**Stack técnica**
-- TanStack Start (já configurado) + TanStack Query
-- Lovable Cloud (Postgres + Auth + RLS por professor)
-- shadcn/ui + Tailwind (design system limpo, focado em impressão)
-- `@react-pdf/renderer` para gerar PDFs das folhas e devolutivas
-- CSV import via `papaparse`
+## Ordem segura de implementação
+1. Adicionar variáveis `VITE_FIREBASE_*` e `VITE_DATA_CONNECT_*` em `.env.example` e pedir ao usuário para preencher `.env`.
+2. Instalar `firebase` (dependência única).
+3. Criar `src/integrations/firebase/client.ts` (init + guarda HMR) e `auth.ts` (helpers) — nenhuma rota consumindo ainda; app segue funcionando via Supabase.
+4. Criar `src/hooks/use-firebase-user.ts` e `src/integrations/firebase/dataconnect.ts` (cliente base, sem queries).
+5. Migrar `src/routes/auth.tsx` para Firebase (email/senha + Google popup). Testar login/cadastro no preview.
+6. Migrar `beforeLoad` e `signOut` em `src/routes/_authenticated/route.tsx` para Firebase; ajustar efeito Gmail para não bloquear se o backend Gmail ainda estiver Supabase.
+7. Trocar o assinante em `src/routes/__root.tsx` de `supabase.auth.onAuthStateChange` para `onAuthStateChanged` do Firebase.
+8. Smoke test: login com e-mail/senha, login com Google, refresh em rota protegida, logout, e navegação para `/`.
+9. Documentar (em `AGENTS.md` ou README de rotas) que rotas de negócio e Gmail permanecem Supabase-backed até etapas futuras, listando o que pode aparecer quebrado enquanto isso.
 
-**Design**
-- Interface do professor: densa, tabular, cores neutras, foco em produtividade (atalhos de teclado na correção)
-- Folha impressa: preto e branco puro, alto contraste, bolhas grandes, tipografia sóbria (Inter ou similar)
-
-### Fase 2 (depois do MVP validado)
-- Versões embaralhadas com mapeamento reverso
-- Múltiplas alternativas configuráveis (A–C, A–D, A–E, custom)
-- Certo/Errado no modelo CEBRASPE (erro anula acerto)
-- Questões discursivas e resposta curta (correção manual + nota parcial)
-- Bônus/anulada em massa, tolerância numérica, unidade de medida
-- QR Code por aluno (biblioteca `qrcode`)
-- Banco de modelos reutilizáveis
-- Modo "correção pelo aluno" em 3 etapas
-- Exportação CSV/planilha de resultados
-- Comentários e observações do professor por questão
-
-### Fase 3 (futuro)
-- Leitura automática por câmera / scanner (OMR)
-- Login para alunos verem sua devolutiva online
-- Comparação de desempenho entre avaliações
-- Integração com sistemas externos
-
-### O que preciso de você para começar
-Responda as 3 perguntas acima e eu começo pela Fase 1. Se quiser, já posso ativar o Lovable Cloud e montar o esqueleto (modelo de dados + navegação + tela de turmas) na primeira leva.
+## Perguntas antes de partir para build
+- Confirmar que aceitamos que rotas de negócio (`turmas`, `avaliacoes`, etc.) e o fluxo Gmail possam apresentar erros/leituras vazias até serem migradas — ou se prefere que eu proponha antes um levantamento das RLS/edge functions afetadas.
+- Confirmar se o botão "Continuar com Google" deve continuar disparando o setup do Gmail nesta fase (arriscado) ou se devo desabilitar temporariamente (recomendado).
