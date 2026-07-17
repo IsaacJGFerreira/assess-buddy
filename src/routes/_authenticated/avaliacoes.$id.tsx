@@ -8,7 +8,6 @@ import {
   ChevronDown,
   Copy,
   Download,
-  ExternalLink,
   FileImage,
   FileText,
   LayoutGrid,
@@ -24,6 +23,7 @@ import { toast } from "sonner";
 
 import { AnswerSheet } from "@/components/answer-sheet";
 import { AnswerSheetUploadPanel } from "@/components/answer-sheet-upload-panel";
+import { StudentFeedbackEditor } from "@/components/class-feedback-panel";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -149,6 +149,7 @@ function AvaliacaoDetail() {
           <TabsTrigger value="folha">Folha</TabsTrigger>
           <TabsTrigger value="correcao">Correção</TabsTrigger>
           <TabsTrigger value="relatorio">Relatório</TabsTrigger>
+          <TabsTrigger value="devolutiva">Devolutiva</TabsTrigger>
         </TabsList>
 
         <TabsContent value="config" className="mt-4">
@@ -165,6 +166,9 @@ function AvaliacaoDetail() {
         </TabsContent>
         <TabsContent value="relatorio" className="mt-4">
           <RelatorioTab avaliacaoId={id} turmaId={avaliacao.turma_id} />
+        </TabsContent>
+        <TabsContent value="devolutiva" className="mt-4">
+          <DevolutivaTab avaliacaoId={id} turmaId={avaliacao.turma_id} />
         </TabsContent>
       </Tabs>
     </div>
@@ -1326,6 +1330,200 @@ function RespostaInput({ questao, value, onSubmit }: { questao: Questao; value: 
   return <div className="flex flex-wrap gap-1">{alternativas(questao).map((option) => <button key={option} type="button" className={`h-8 w-8 rounded-full border text-sm font-semibold ${value === option ? "border-primary bg-primary text-primary-foreground" : "border-input hover:bg-muted"}`} onClick={() => onSubmit(value === option ? "" : option)}>{option}</button>)}<button type="button" className="ml-2 text-xs text-muted-foreground hover:text-foreground" onClick={() => onSubmit("")}>limpar</button></div>;
 }
 
+function DevolutivaTab({
+  avaliacaoId,
+  turmaId,
+}: {
+  avaliacaoId: string;
+  turmaId: string | null;
+}) {
+  const alunosQuery = useQuery({
+    queryKey: alunosKey(turmaId ?? ""),
+    queryFn: () => (turmaId ? listAlunosByTurma(turmaId) : Promise.resolve([])),
+    enabled: Boolean(turmaId),
+  });
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [feedbackQueue, setFeedbackQueue] = useState<string[] | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const alunos = alunosQuery.data ?? [];
+  const allSelected = alunos.length > 0 && selectedIds.length === alunos.length;
+  const someSelected = selectedIds.length > 0 && !allSelected;
+  const activeStudentId = feedbackQueue?.[activeIndex] ?? null;
+  const activeStudent = alunos.find((aluno) => aluno.id === activeStudentId) ?? null;
+
+  function toggleStudent(studentId: string, checked: boolean) {
+    setSelectedIds((current) =>
+      checked
+        ? current.includes(studentId)
+          ? current
+          : [...current, studentId]
+        : current.filter((id) => id !== studentId),
+    );
+  }
+
+  function toggleAllStudents() {
+    setSelectedIds(allSelected ? [] : alunos.map((aluno) => aluno.id));
+  }
+
+  function startFeedback() {
+    const queue = alunos
+      .filter((aluno) => selectedIds.includes(aluno.id))
+      .map((aluno) => aluno.id);
+    if (queue.length === 0) return;
+    setFeedbackQueue(queue);
+    setActiveIndex(0);
+  }
+
+  if (activeStudentId && feedbackQueue) {
+    return (
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="button" variant="outline" onClick={() => setFeedbackQueue(null)}>
+              Voltar à lista
+            </Button>
+            <div>
+              <div className="font-semibold">
+                {activeStudent?.nome ?? "Aluno selecionado"}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Aluno {activeIndex + 1} de {feedbackQueue.length}. Salve antes de avançar.
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={activeIndex === 0}
+              onClick={() => setActiveIndex((current) => Math.max(0, current - 1))}
+            >
+              Anterior
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={activeIndex === feedbackQueue.length - 1}
+              onClick={() =>
+                setActiveIndex((current) => Math.min(feedbackQueue.length - 1, current + 1))
+              }
+            >
+              Próximo
+            </Button>
+          </div>
+        </div>
+        <StudentFeedbackEditor
+          key={activeStudentId}
+          assessmentId={avaliacaoId}
+          studentId={activeStudentId}
+          embedded
+        />
+      </div>
+    );
+  }
+
+  if (!turmaId) {
+    return (
+      <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
+        Associe uma turma à avaliação para preparar devolutivas.
+      </p>
+    );
+  }
+
+  if (alunosQuery.isPending) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" /> Carregando alunos…
+      </div>
+    );
+  }
+
+  if (alunosQuery.isError) {
+    return <p className="text-sm text-destructive">{message(alunosQuery.error)}</p>;
+  }
+
+  if (alunos.length === 0) {
+    return (
+      <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
+        Esta turma ainda não possui alunos cadastrados.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
+          <div>
+            <h2 className="font-semibold">Escolha os alunos</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Selecione uma pessoa, várias ou a turma inteira para preparar as devolutivas.
+            </p>
+          </div>
+          <Button type="button" variant="outline" onClick={toggleAllStudents}>
+            {allSelected ? "Limpar seleção" : "Selecionar toda a turma"}
+          </Button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50 text-left text-muted-foreground">
+              <tr>
+                <th className="w-14 px-4 py-3">
+                  <Checkbox
+                    checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                    onCheckedChange={toggleAllStudents}
+                    aria-label="Selecionar toda a turma"
+                  />
+                </th>
+                <th className="px-4 py-3">Aluno</th>
+                <th className="px-4 py-3">Matrícula</th>
+                <th className="px-4 py-3">E-mail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {alunos.map((aluno) => {
+                const checked = selectedIds.includes(aluno.id);
+                return (
+                  <tr
+                    key={aluno.id}
+                    className={`border-t border-border ${checked ? "bg-primary/5" : ""}`}
+                  >
+                    <td className="px-4 py-3">
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(value) => toggleStudent(aluno.id, value === true)}
+                        aria-label={`Selecionar ${aluno.nome}`}
+                      />
+                    </td>
+                    <td className="px-4 py-3 font-medium">{aluno.nome}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {aluno.matricula ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{aluno.email ?? "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
+        <span className="text-sm text-muted-foreground">
+          {selectedIds.length === 0
+            ? "Nenhum aluno selecionado."
+            : `${selectedIds.length} aluno${selectedIds.length === 1 ? "" : "s"} selecionado${selectedIds.length === 1 ? "" : "s"}.`}
+        </span>
+        <Button type="button" disabled={selectedIds.length === 0} onClick={startFeedback}>
+          Fazer devolutiva para {selectedIds.length === 1 ? "este aluno" : "estes alunos"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function RelatorioTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: string | null }) {
   const questoesQuery = useQuery({ queryKey: questoesKey(avaliacaoId), queryFn: () => listQuestoes(avaliacaoId) });
   const alunosQuery = useQuery({ queryKey: alunosKey(turmaId ?? ""), queryFn: () => turmaId ? listAlunosByTurma(turmaId) : Promise.resolve([]), enabled: Boolean(turmaId) });
@@ -1349,13 +1547,75 @@ function RelatorioTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: 
     return { questao, correct, total, percent: total ? Math.round((correct / total) * 100) : 0 };
   });
 
-  return <div className="space-y-6"><div className="grid grid-cols-2 gap-3 md:grid-cols-4"><Stat label="Média" value={media.toFixed(2)} /><Stat label="Mediana" value={mediana.toFixed(2)} /><Stat label="Maior" value={(values.at(-1) ?? 0).toFixed(2)} /><Stat label="Menor" value={(values[0] ?? 0).toFixed(2)} /></div><div className="overflow-hidden rounded-lg border border-border bg-card"><div className="border-b border-border px-4 py-3 font-semibold">Notas por aluno</div><table className="w-full text-sm"><thead className="bg-muted/50 text-left"><tr><th className="px-4 py-2">Aluno</th><th className="px-4 py-2">Nota</th><th className="px-4 py-2">Acertos</th><th className="px-4 py-2">Erros</th><th className="px-4 py-2">Branco</th><th className="px-4 py-2">Devolutiva</th></tr></thead><tbody>{notas.map((item) => <tr key={item.aluno.id} className="border-t border-border"><td className="px-4 py-2">{item.aluno.nome}</td><td className="px-4 py-2 font-semibold">{item.nota.toFixed(2)}</td><td className="px-4 py-2">{item.acertos}</td><td className="px-4 py-2">{item.erros}</td><td className="px-4 py-2">{item.branco}</td><td className="px-4 py-2"><Link
-  to="/devolutiva/$id/$alunoId"
-  params={{ id: avaliacaoId, alunoId: item.aluno.id }}
-  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
->
-  Ver devolutiva <ExternalLink className="h-3 w-3" />
-</Link></td></tr>)}</tbody></table></div><div className="overflow-hidden rounded-lg border border-border bg-card"><div className="border-b border-border px-4 py-3 font-semibold">% de acerto por questão</div><table className="w-full text-sm"><thead className="bg-muted/50 text-left"><tr><th className="px-4 py-2">Nº</th><th className="px-4 py-2">Conteúdo</th><th className="px-4 py-2">Acertos</th><th className="px-4 py-2">Aproveitamento</th></tr></thead><tbody>{aproveitamento.map(({ questao, correct, total, percent }) => <tr key={questao.id} className="border-t border-border"><td className="px-4 py-2 font-medium">{questao.numero}</td><td className="px-4 py-2">{questao.conteudo ?? "—"}</td><td className="px-4 py-2">{correct}/{total}</td><td className="px-4 py-2"><div className="flex items-center gap-2"><div className="h-2 flex-1 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary" style={{ width: `${percent}%` }} /></div><span className="w-10 text-right text-xs">{percent}%</span></div></td></tr>)}</tbody></table></div></div>;
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Stat label="Média" value={media.toFixed(2)} />
+        <Stat label="Mediana" value={mediana.toFixed(2)} />
+        <Stat label="Maior" value={(values.at(-1) ?? 0).toFixed(2)} />
+        <Stat label="Menor" value={(values[0] ?? 0).toFixed(2)} />
+      </div>
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="border-b border-border px-4 py-3 font-semibold">Notas por aluno</div>
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50 text-left">
+            <tr>
+              <th className="px-4 py-2">Aluno</th>
+              <th className="px-4 py-2">Nota</th>
+              <th className="px-4 py-2">Acertos</th>
+              <th className="px-4 py-2">Erros</th>
+              <th className="px-4 py-2">Branco</th>
+            </tr>
+          </thead>
+          <tbody>
+            {notas.map((item) => (
+              <tr key={item.aluno.id} className="border-t border-border">
+                <td className="px-4 py-2">{item.aluno.nome}</td>
+                <td className="px-4 py-2 font-semibold">{item.nota.toFixed(2)}</td>
+                <td className="px-4 py-2">{item.acertos}</td>
+                <td className="px-4 py-2">{item.erros}</td>
+                <td className="px-4 py-2">{item.branco}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="border-b border-border px-4 py-3 font-semibold">
+          % de acerto por questão
+        </div>
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50 text-left">
+            <tr>
+              <th className="px-4 py-2">Nº</th>
+              <th className="px-4 py-2">Conteúdo</th>
+              <th className="px-4 py-2">Acertos</th>
+              <th className="px-4 py-2">Aproveitamento</th>
+            </tr>
+          </thead>
+          <tbody>
+            {aproveitamento.map(({ questao, correct, total, percent }) => (
+              <tr key={questao.id} className="border-t border-border">
+                <td className="px-4 py-2 font-medium">{questao.numero}</td>
+                <td className="px-4 py-2">{questao.conteudo ?? "—"}</td>
+                <td className="px-4 py-2">
+                  {correct}/{total}
+                </td>
+                <td className="px-4 py-2">
+                  <div className="flex items-center gap-2">
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full bg-primary" style={{ width: `${percent}%` }} />
+                    </div>
+                    <span className="w-10 text-right text-xs">{percent}%</span>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
