@@ -11,6 +11,10 @@ import {
   type FeedbackSummaryRow,
 } from "@/lib/devolutiva-data";
 import { renderFeedbackQuestionCard } from "@/lib/devolutiva-pdf-card";
+import {
+  createFeedbackImageProxyUrl,
+  parseFirebaseFeedbackImageUrl,
+} from "@/lib/feedback-image-url";
 
 export type {
   FeedbackQuestion,
@@ -78,7 +82,8 @@ export async function generateFeedbackPdf(input: FeedbackPdfInput): Promise<Blob
 
   for (const questionAnalysis of analysis.questions) {
     try {
-      const card = await captureQuestionCard(questionAnalysis);
+      const preparedAnalysis = await prepareQuestionAnalysisImages(questionAnalysis);
+      const card = await captureQuestionCard(preparedAnalysis);
       const naturalHeight = (card.height * CONTENT_WIDTH) / card.width;
 
       if (y + naturalHeight > CONTENT_BOTTOM) {
@@ -106,6 +111,71 @@ export async function generateFeedbackPdf(input: FeedbackPdfInput): Promise<Blob
 
   drawFooters(doc);
   return doc.output("blob");
+}
+
+const MARKDOWN_IMAGE_PATTERN = /!\[([^\]]*)\]\(([^)]+)\)/g;
+
+async function prepareQuestionAnalysisImages(
+  analysis: FeedbackQuestionAnalysis,
+): Promise<FeedbackQuestionAnalysis> {
+  const [generalComment, specificComment, modelImage] = await Promise.all([
+    embedFirebaseMarkdownImages(analysis.question.orientacao_correcao ?? ""),
+    embedFirebaseMarkdownImages(analysis.result.feedback),
+    prepareFirebaseImageSource(analysis.question.resposta_modelo_imagem_url),
+  ]);
+
+  return {
+    ...analysis,
+    question: {
+      ...analysis.question,
+      orientacao_correcao: generalComment,
+      resposta_modelo_imagem_url: modelImage,
+    },
+    result: {
+      ...analysis.result,
+      feedback: specificComment,
+    },
+  };
+}
+
+async function embedFirebaseMarkdownImages(value: string): Promise<string> {
+  const matches = Array.from(value.matchAll(MARKDOWN_IMAGE_PATTERN));
+  const firebaseSources = Array.from(
+    new Set(
+      matches.map((match) => match[2]).filter((source) => parseFirebaseFeedbackImageUrl(source)),
+    ),
+  );
+  if (firebaseSources.length === 0) return value;
+
+  const embeddedSources = new Map<string, string | null>();
+  await Promise.all(
+    firebaseSources.map(async (source) => {
+      try {
+        embeddedSources.set(source, await prepareImage(source));
+      } catch {
+        embeddedSources.set(source, null);
+      }
+    }),
+  );
+
+  return value.replace(MARKDOWN_IMAGE_PATTERN, (markdown, alt: string, source: string) => {
+    if (!embeddedSources.has(source)) return markdown;
+    const embedded = embeddedSources.get(source);
+    return embedded ? `![${alt}](${embedded})` : `*Imagem indisponível: ${alt || "arquivo"}*`;
+  });
+}
+
+async function prepareFirebaseImageSource(
+  source: string | null | undefined,
+): Promise<string | null> {
+  if (!source) return null;
+  if (!parseFirebaseFeedbackImageUrl(source)) return source;
+
+  try {
+    return await prepareImage(source);
+  } catch {
+    return null;
+  }
 }
 
 async function captureQuestionCard(
@@ -465,37 +535,83 @@ async function prepareCardImages(container: HTMLElement): Promise<void> {
   const images = Array.from(container.querySelectorAll("img"));
   await Promise.all(
     images.map(async (image) => {
+      let target = image;
       const source = image.getAttribute("src");
       if (!source) return;
       try {
         const prepared = await prepareImage(source);
-        image.removeAttribute("crossorigin");
-        image.src = prepared;
-        if (typeof image.decode === "function") await image.decode();
+        target = replaceWithEmbeddedImage(image, prepared);
+        await waitForImage(target);
       } catch {
         const fallback = document.createElement("p");
         fallback.textContent = image.alt
           ? `Imagem indisponível: ${image.alt}`
           : "Imagem indisponível.";
-        image.replaceWith(fallback);
+        target.replaceWith(fallback);
       }
     }),
   );
 }
 
+function replaceWithEmbeddedImage(image: HTMLImageElement, source: string): HTMLImageElement {
+  const replacement = image.cloneNode(false) as HTMLImageElement;
+  replacement.removeAttribute("crossorigin");
+  replacement.removeAttribute("src");
+  image.replaceWith(replacement);
+  replacement.src = source;
+  return replacement;
+}
+
+async function waitForImage(image: HTMLImageElement): Promise<void> {
+  if (image.complete && image.naturalWidth > 0) return;
+
+  await new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(
+      () => reject(new Error("A imagem demorou demais para carregar")),
+      10_000,
+    );
+    image.addEventListener(
+      "load",
+      () => {
+        window.clearTimeout(timeout);
+        resolve();
+      },
+      { once: true },
+    );
+    image.addEventListener(
+      "error",
+      () => {
+        window.clearTimeout(timeout);
+        reject(new Error("Não foi possível carregar a imagem"));
+      },
+      { once: true },
+    );
+  });
+}
+
 async function prepareImage(url: string): Promise<string> {
   if (url.startsWith("data:")) return url;
 
-  const response = await fetch(url, {
-    cache: "no-store",
-    credentials: "omit",
-    mode: "cors",
-    referrerPolicy: "no-referrer",
-  });
-  if (!response.ok) throw new Error("Imagem indisponível");
-  const blob = await response.blob();
-  if (blob.size === 0) throw new Error("Imagem vazia");
-  return blobToDataUrl(blob);
+  const isFirebaseImage = Boolean(parseFirebaseFeedbackImageUrl(url));
+  const source = isFirebaseImage ? createFeedbackImageProxyUrl(url) : url;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 15_000);
+
+  try {
+    const response = await fetch(source, {
+      cache: "no-store",
+      credentials: isFirebaseImage ? "same-origin" : "omit",
+      mode: isFirebaseImage ? "same-origin" : "cors",
+      referrerPolicy: "no-referrer",
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error("Imagem indisponível");
+    const blob = await response.blob();
+    if (blob.size === 0) throw new Error("Imagem vazia");
+    return blobToDataUrl(blob);
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {

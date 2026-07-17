@@ -21,6 +21,19 @@ test("does not render raw HTML from a comment", () => {
   assert.match(html, /Texto seguro/);
 });
 
+test("renders a safe embedded image used during PDF capture", () => {
+  const png = "data:image/png;base64,iVBORw0KGgo=";
+  const html = renderRichCommentToHtml(`![Imagem incorporada](${png})`);
+
+  assert.match(html, /src="data:image\/png;base64,iVBORw0KGgo="/);
+});
+
+test("does not allow an executable data URL", () => {
+  const html = renderRichCommentToHtml("![Imagem](data:image/svg+xml;base64,PHN2Zz4=)");
+
+  assert.doesNotMatch(html, /src="data:image\/svg\+xml/);
+});
+
 test("preserves line breaks and renders the safe formatting controls", () => {
   const html = renderRichCommentToHtml(`Linha 1
 Linha 2
