@@ -1,21 +1,27 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { getDownloadURL, ref } from "firebase/storage";
 import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  CheckCircle2,
   ChevronDown,
+  CircleAlert,
+  Clock3,
   Copy,
   Download,
   FileImage,
   FileText,
   LayoutGrid,
   Loader2,
+  Mail,
   Plus,
   Printer,
   RectangleHorizontal,
   RectangleVertical,
+  Send,
   Trash2,
   TriangleAlert,
 } from "lucide-react";
@@ -23,7 +29,6 @@ import { toast } from "sonner";
 
 import { AnswerSheet } from "@/components/answer-sheet";
 import { AnswerSheetUploadPanel } from "@/components/answer-sheet-upload-panel";
-import { StudentFeedbackEditor } from "@/components/class-feedback-panel";
 import { FeedbackCommentConfigurator } from "@/components/feedback-comment-configurator";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -81,6 +86,25 @@ import {
   MIN_IDENTIFIER_DIGITS,
   type AnswerSheetIdentificationMode,
 } from "@/lib/answer-sheet-identification";
+import { getCurrentUser } from "@/integrations/firebase/auth";
+import { getFirebaseStorage } from "@/integrations/firebase/client";
+import {
+  generateFeedbackPdf,
+  type FeedbackQuestion,
+  type FeedbackResponse,
+} from "@/lib/devolutiva-pdf";
+import {
+  runSequentialFeedbackDelivery,
+  type FeedbackDeliveryStatus,
+  type FeedbackDeliveryUpdate,
+} from "@/lib/feedback-delivery-queue";
+import {
+  connectGmail,
+  getSavedGmailConnection,
+  isGmailConnectionValid,
+  sendPdfWithGmail,
+  type GmailConnection,
+} from "@/lib/gmail-sender";
 
 export const Route = createFileRoute("/_authenticated/avaliacoes/$id")({
   component: AvaliacaoDetail,
@@ -239,12 +263,16 @@ function ConfigTab({ avaliacaoId }: { avaliacaoId: string }) {
 
   const remove = useMutation({
     mutationFn: deleteQuestao,
-    onSuccess: async (_data, id) => {
+    onSuccess: async ({ storageCleanupFailed }, id) => {
       queryClient.setQueryData<Questao[]>(questoesKey(avaliacaoId), (current = []) =>
         current.filter((item) => item.id !== id),
       );
       await queryClient.invalidateQueries({ queryKey: questoesKey(avaliacaoId) });
-      toast.success("Item apagado.");
+      if (storageCleanupFailed) {
+        toast.warning("Item apagado, mas uma imagem vinculada não pôde ser removida.");
+      } else {
+        toast.success("Item, respostas, comentários e imagens apagados.");
+      }
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -1367,30 +1395,50 @@ function RespostaInput({ questao, value, manualScore, onSubmit, onManualScoreSub
   return <div className="flex flex-wrap gap-1">{alternativas(questao).map((option) => <button key={option} type="button" className={`h-8 w-8 rounded-full border text-sm font-semibold ${value === option ? "border-primary bg-primary text-primary-foreground" : "border-input hover:bg-muted"}`} onClick={() => onSubmit(value === option ? "" : option)}>{option}</button>)}<button type="button" className="ml-2 text-xs text-muted-foreground hover:text-foreground" onClick={() => onSubmit("")}>limpar</button></div>;
 }
 
-function DevolutivaTab({
-  avaliacaoId,
-  turmaId,
-}: {
-  avaliacaoId: string;
-  turmaId: string | null;
-}) {
+type FeedbackDeliveryState = Record<string, { status: FeedbackDeliveryStatus; error?: string }>;
+
+function DevolutivaTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: string | null }) {
   const alunosQuery = useQuery({
     queryKey: alunosKey(turmaId ?? ""),
     queryFn: () => (turmaId ? listAlunosByTurma(turmaId) : Promise.resolve([])),
     enabled: Boolean(turmaId),
   });
+  const avaliacaoQuery = useQuery({
+    queryKey: avaliacaoKey(avaliacaoId),
+    queryFn: () => getAvaliacao(avaliacaoId),
+  });
+  const questoesQuery = useQuery({
+    queryKey: questoesKey(avaliacaoId),
+    queryFn: () => listQuestoes(avaliacaoId),
+  });
+  const respostasQuery = useQuery({
+    queryKey: respostasKey(avaliacaoId),
+    queryFn: () => listRespostasByAvaliacao(avaliacaoId),
+  });
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [feedbackQueue, setFeedbackQueue] = useState<string[] | null>(null);
-  const [activeIndex, setActiveIndex] = useState(0);
   const [configuringSheet, setConfiguringSheet] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [gmail, setGmail] = useState<GmailConnection | null>(() => getSavedGmailConnection());
+  const [deliveryProgress, setDeliveryProgress] = useState<FeedbackDeliveryState>({});
 
-  const alunos = alunosQuery.data ?? [];
+  const alunos = useMemo(() => alunosQuery.data ?? [], [alunosQuery.data]);
+  const selectedStudents = useMemo(
+    () => alunos.filter((aluno) => selectedIds.includes(aluno.id)),
+    [alunos, selectedIds],
+  );
+  const progressStudents = useMemo(
+    () => alunos.filter((aluno) => deliveryProgress[aluno.id]),
+    [alunos, deliveryProgress],
+  );
   const allSelected = alunos.length > 0 && selectedIds.length === alunos.length;
   const someSelected = selectedIds.length > 0 && !allSelected;
-  const activeStudentId = feedbackQueue?.[activeIndex] ?? null;
-  const activeStudent = alunos.find((aluno) => aluno.id === activeStudentId) ?? null;
+  const completedCount = progressStudents.filter((aluno) => {
+    const status = deliveryProgress[aluno.id]?.status;
+    return status === "sent" || status === "failed";
+  }).length;
 
   function toggleStudent(studentId: string, checked: boolean) {
+    if (sending) return;
     setSelectedIds((current) =>
       checked
         ? current.includes(studentId)
@@ -1401,16 +1449,131 @@ function DevolutivaTab({
   }
 
   function toggleAllStudents() {
+    if (sending) return;
     setSelectedIds(allSelected ? [] : alunos.map((aluno) => aluno.id));
   }
 
-  function startFeedback() {
-    const queue = alunos
-      .filter((aluno) => selectedIds.includes(aluno.id))
-      .map((aluno) => aluno.id);
-    if (queue.length === 0) return;
-    setFeedbackQueue(queue);
-    setActiveIndex(0);
+  function updateDelivery(update: FeedbackDeliveryUpdate) {
+    setDeliveryProgress((current) => ({
+      ...current,
+      [update.id]: {
+        status: update.status,
+        error: update.error,
+      },
+    }));
+  }
+
+  async function sendSelectedFeedbacks() {
+    if (selectedStudents.length === 0 || sending) return;
+
+    const user = getCurrentUser();
+    const teacherEmail = user?.email?.trim().toLowerCase();
+    if (!user || !teacherEmail) {
+      toast.error("Sua conta do professor não possui um e-mail válido.");
+      return;
+    }
+
+    const initialProgress = Object.fromEntries(
+      selectedStudents.map((student) => [
+        student.id,
+        { status: "queued" as FeedbackDeliveryStatus },
+      ]),
+    );
+    setDeliveryProgress(initialProgress);
+    setSending(true);
+
+    try {
+      const connection =
+        isGmailConnectionValid(gmail) && gmail.email === teacherEmail
+          ? gmail
+          : await connectGmail({ expectedEmail: teacherEmail });
+      setGmail(connection);
+
+      const [assessment, questions, responses] = await Promise.all([
+        avaliacaoQuery.data ?? getAvaliacao(avaliacaoId),
+        questoesQuery.data ?? listQuestoes(avaliacaoId),
+        respostasQuery.data ?? listRespostasByAvaliacao(avaliacaoId),
+      ]);
+      const preparedQuestions = await prepareFeedbackQuestionImages(questions);
+      const classResponses = responses.map((response): FeedbackResponse => ({
+        aluno_id: response.aluno_id,
+        questao_id: response.questao_id,
+        resposta: response.resposta,
+        nota_manual: response.nota_manual ?? null,
+        feedback: response.feedback ?? null,
+      }));
+
+      const results = await runSequentialFeedbackDelivery(
+        selectedStudents,
+        async (student, setPhase) => {
+          const recipient = student.email?.trim().toLowerCase();
+          if (!recipient) {
+            throw new Error("Aluno sem e-mail cadastrado.");
+          }
+
+          setPhase("preparing");
+          await allowProgressPaint();
+          const studentResponses = classResponses.filter(
+            (response) => response.aluno_id === student.id,
+          );
+          const pdf = await generateFeedbackPdf({
+            assessment,
+            student: {
+              id: student.id,
+              nome: student.nome,
+              matricula: student.matricula ?? null,
+              email: student.email ?? null,
+            },
+            questions: preparedQuestions,
+            responses: studentResponses,
+            classResponses,
+            teacherEmail,
+          });
+
+          setPhase("sending");
+          await allowProgressPaint();
+          await sendPdfWithGmail(connection, {
+            to: recipient,
+            subject: `Devolutiva — ${assessment.titulo}`,
+            text: feedbackEmailText(student.nome, assessment.titulo, teacherEmail),
+            pdf,
+            filename: `devolutiva-${student.nome}.pdf`,
+          });
+        },
+        updateDelivery,
+      );
+
+      const failedIds = results
+        .filter((result) => result.status === "failed")
+        .map((result) => result.id);
+      const sentCount = results.length - failedIds.length;
+      setSelectedIds(failedIds);
+
+      if (failedIds.length === 0) {
+        toast.success(
+          `${sentCount} devolutiva${sentCount === 1 ? "" : "s"} enviada${sentCount === 1 ? "" : "s"}.`,
+        );
+      } else {
+        toast.warning(
+          `${sentCount} enviada${sentCount === 1 ? "" : "s"} e ${failedIds.length} com falha. Os alunos com falha continuam selecionados.`,
+        );
+      }
+    } catch (error) {
+      const errorMessage = message(error);
+      setDeliveryProgress((current) =>
+        Object.fromEntries(
+          Object.entries(current).map(([studentId, progress]) => [
+            studentId,
+            progress.status === "sent" || progress.status === "failed"
+              ? progress
+              : { status: "failed", error: errorMessage },
+          ]),
+        ),
+      );
+      toast.error(errorMessage);
+    } finally {
+      setSending(false);
+    }
   }
 
   if (configuringSheet) {
@@ -1420,55 +1583,6 @@ function DevolutivaTab({
         selectedStudentCount={selectedIds.length}
         onBack={() => setConfiguringSheet(false)}
       />
-    );
-  }
-
-  if (activeStudentId && feedbackQueue) {
-    return (
-      <div className="overflow-hidden rounded-lg border border-border bg-card">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <Button type="button" variant="outline" onClick={() => setFeedbackQueue(null)}>
-              Voltar à lista
-            </Button>
-            <div>
-              <div className="font-semibold">
-                {activeStudent?.nome ?? "Aluno selecionado"}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                Aluno {activeIndex + 1} de {feedbackQueue.length}. Salve antes de avançar.
-              </div>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={activeIndex === 0}
-              onClick={() => setActiveIndex((current) => Math.max(0, current - 1))}
-            >
-              Anterior
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={activeIndex === feedbackQueue.length - 1}
-              onClick={() =>
-                setActiveIndex((current) => Math.min(feedbackQueue.length - 1, current + 1))
-              }
-            >
-              Próximo
-            </Button>
-          </div>
-        </div>
-        <StudentFeedbackEditor
-          key={activeStudentId}
-          assessmentId={avaliacaoId}
-          studentId={activeStudentId}
-          embedded
-          showStudentScores={feedbackQueue.length === 1}
-        />
-      </div>
     );
   }
 
@@ -1502,61 +1616,84 @@ function DevolutivaTab({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-border bg-card">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
-          <div>
-            <h2 className="font-semibold">Escolha os alunos</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Selecione uma pessoa, várias ou a turma inteira para preparar as devolutivas.
-            </p>
+      <div
+        className={
+          progressStudents.length > 0 ? "grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]" : ""
+        }
+      >
+        <div className="rounded-lg border border-border bg-card">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
+            <div>
+              <h2 className="font-semibold">Escolha os alunos</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Selecione os alunos e envie todas as devolutivas sem sair desta tela.
+              </p>
+            </div>
+            <Button type="button" variant="outline" disabled={sending} onClick={toggleAllStudents}>
+              {allSelected ? "Limpar seleção" : "Selecionar toda a turma"}
+            </Button>
           </div>
-          <Button type="button" variant="outline" onClick={toggleAllStudents}>
-            {allSelected ? "Limpar seleção" : "Selecionar toda a turma"}
-          </Button>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 text-left text-muted-foreground">
+                <tr>
+                  <th className="w-14 px-4 py-3">
+                    <Checkbox
+                      checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                      disabled={sending}
+                      onCheckedChange={toggleAllStudents}
+                      aria-label="Selecionar toda a turma"
+                    />
+                  </th>
+                  <th className="px-4 py-3">Aluno</th>
+                  <th className="px-4 py-3">Matrícula</th>
+                  <th className="px-4 py-3">E-mail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {alunos.map((aluno) => {
+                  const checked = selectedIds.includes(aluno.id);
+                  return (
+                    <tr
+                      key={aluno.id}
+                      className={`border-t border-border ${checked ? "bg-primary/5" : ""}`}
+                    >
+                      <td className="px-4 py-3">
+                        <Checkbox
+                          checked={checked}
+                          disabled={sending}
+                          onCheckedChange={(value) => toggleStudent(aluno.id, value === true)}
+                          aria-label={`Selecionar ${aluno.nome}`}
+                        />
+                      </td>
+                      <td className="px-4 py-3 font-medium">{aluno.nome}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{aluno.matricula ?? "—"}</td>
+                      <td
+                        className={
+                          aluno.email
+                            ? "px-4 py-3 text-muted-foreground"
+                            : "px-4 py-3 text-amber-700"
+                        }
+                      >
+                        {aluno.email ?? "Sem e-mail"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left text-muted-foreground">
-              <tr>
-                <th className="w-14 px-4 py-3">
-                  <Checkbox
-                    checked={allSelected ? true : someSelected ? "indeterminate" : false}
-                    onCheckedChange={toggleAllStudents}
-                    aria-label="Selecionar toda a turma"
-                  />
-                </th>
-                <th className="px-4 py-3">Aluno</th>
-                <th className="px-4 py-3">Matrícula</th>
-                <th className="px-4 py-3">E-mail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {alunos.map((aluno) => {
-                const checked = selectedIds.includes(aluno.id);
-                return (
-                  <tr
-                    key={aluno.id}
-                    className={`border-t border-border ${checked ? "bg-primary/5" : ""}`}
-                  >
-                    <td className="px-4 py-3">
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={(value) => toggleStudent(aluno.id, value === true)}
-                        aria-label={`Selecionar ${aluno.nome}`}
-                      />
-                    </td>
-                    <td className="px-4 py-3 font-medium">{aluno.nome}</td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {aluno.matricula ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{aluno.email ?? "—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        {progressStudents.length > 0 && (
+          <FeedbackDeliveryProgress
+            students={progressStudents}
+            progress={deliveryProgress}
+            completed={completedCount}
+            sending={sending}
+          />
+        )}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
@@ -1569,18 +1706,150 @@ function DevolutivaTab({
           <Button
             type="button"
             variant="outline"
-            disabled={selectedIds.length === 0}
+            disabled={selectedIds.length === 0 || sending}
             onClick={() => setConfiguringSheet(true)}
           >
             Configurar folha de devolução
           </Button>
-          <Button type="button" disabled={selectedIds.length === 0} onClick={startFeedback}>
-            Fazer devolutiva para {selectedIds.length === 1 ? "este aluno" : "estes alunos"}
+          <Button
+            type="button"
+            disabled={selectedIds.length === 0 || sending}
+            onClick={() => void sendSelectedFeedbacks()}
+          >
+            {sending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="mr-2 h-4 w-4" />
+            )}
+            {sending
+              ? `Enviando ${Math.min(completedCount + 1, progressStudents.length)} de ${progressStudents.length}`
+              : `Enviar devolutiva${selectedIds.length === 1 ? "" : "s"} (${selectedIds.length})`}
           </Button>
         </div>
       </div>
     </div>
   );
+}
+
+function FeedbackDeliveryProgress({
+  students,
+  progress,
+  completed,
+  sending,
+}: {
+  students: Aluno[];
+  progress: FeedbackDeliveryState;
+  completed: number;
+  sending: boolean;
+}) {
+  const percentage = students.length ? Math.round((completed / students.length) * 100) : 0;
+
+  return (
+    <aside className="h-fit overflow-hidden rounded-lg border border-border bg-card xl:sticky xl:top-4">
+      <div className="border-b border-border p-4">
+        <div className="flex items-center gap-2">
+          <Mail className="h-4 w-4 text-primary" />
+          <h3 className="font-semibold">Envio das devolutivas</h3>
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {sending
+            ? `${completed} de ${students.length} concluídos`
+            : `${completed} de ${students.length} processados`}
+        </p>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-all"
+            style={{ width: `${percentage}%` }}
+          />
+        </div>
+      </div>
+      <div className="max-h-[28rem] divide-y divide-border overflow-y-auto">
+        {students.map((student) => {
+          const item = progress[student.id];
+          return (
+            <div key={student.id} className="flex gap-3 p-3">
+              <DeliveryStatusIcon status={item.status} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{student.nome}</p>
+                <p
+                  className={`text-xs ${
+                    item.status === "failed"
+                      ? "text-destructive"
+                      : item.status === "sent"
+                        ? "text-emerald-700"
+                        : "text-muted-foreground"
+                  }`}
+                >
+                  {deliveryStatusLabel(item.status)}
+                </p>
+                {item.error && (
+                  <p className="mt-1 text-xs leading-snug text-destructive">{item.error}</p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
+function DeliveryStatusIcon({ status }: { status: FeedbackDeliveryStatus }) {
+  if (status === "sent") {
+    return <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />;
+  }
+  if (status === "failed") {
+    return <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />;
+  }
+  if (status === "preparing" || status === "sending") {
+    return <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />;
+  }
+  return <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />;
+}
+
+function deliveryStatusLabel(status: FeedbackDeliveryStatus): string {
+  if (status === "preparing") return "Gerando PDF";
+  if (status === "sending") return "Enviando e-mail";
+  if (status === "sent") return "Enviado";
+  if (status === "failed") return "Falha no envio";
+  return "Na fila";
+}
+
+async function prepareFeedbackQuestionImages(questions: Questao[]): Promise<FeedbackQuestion[]> {
+  const storage = getFirebaseStorage();
+  return Promise.all(
+    questions.map(async (question) => {
+      const path = question.resposta_modelo_imagem_path;
+      if (!path) return question;
+
+      try {
+        return {
+          ...question,
+          resposta_modelo_imagem_url: await getDownloadURL(ref(storage, path)),
+        };
+      } catch {
+        return { ...question, resposta_modelo_imagem_url: null };
+      }
+    }),
+  );
+}
+
+function allowProgressPaint(): Promise<void> {
+  return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+}
+
+function feedbackEmailText(
+  studentName: string,
+  assessmentTitle: string,
+  teacherEmail: string,
+): string {
+  return [
+    `Olá, ${studentName}.`,
+    "",
+    `Segue em anexo a devolutiva da avaliação “${assessmentTitle}”.`,
+    "",
+    `Mensagem enviada por ${teacherEmail} pelo sistema Folha.`,
+  ].join("\n");
 }
 
 function RelatorioTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: string | null }) {

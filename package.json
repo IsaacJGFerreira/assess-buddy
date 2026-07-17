@@ -9,7 +9,8 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "test:omr": "node --import tsx --test src/components/answer-sheet.test.tsx src/lib/answer-sheet-model.test.ts src/lib/answer-sheet-omr.test.ts src/lib/answer-sheet-identification.test.ts",
-    "test:feedback": "node --import tsx --test src/lib/rich-comment.test.tsx src/lib/devolutiva-data.test.ts src/lib/feedback-image-proxy.test.ts",
+    "test:feedback": "node --import tsx --test src/lib/rich-comment.test.tsx src/lib/devolutiva-data.test.ts src/lib/feedback-image-proxy.test.ts src/lib/feedback-delivery-queue.test.ts",
+    "test:cleanup": "node --import tsx --test src/integrations/firebase/storage-cleanup.test.ts src/integrations/firebase/cascade-delete-contract.test.ts",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

@@ -19,9 +19,9 @@ function Painel() {
     onSuccess: async ({ storageCleanupFailed }) => {
       await queryClient.invalidateQueries({ queryKey: ["avaliacoes"] });
       if (storageCleanupFailed) {
-        toast.warning("Prova apagada. Alguns arquivos digitalizados não puderam ser removidos.");
+        toast.warning("Prova apagada. Alguns arquivos relacionados não puderam ser removidos.");
       } else {
-        toast.success("Prova apagada por completo.");
+        toast.success("Prova e todos os dados relacionados foram apagados por completo.");
       }
     },
     onError: (error: Error) => toast.error(error.message),

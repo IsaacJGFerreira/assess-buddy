@@ -16,6 +16,7 @@ import {
   listarQuestoesRuntime,
   listarRespostasRuntime,
   obterAvaliacaoRuntime,
+  obterQuestaoRuntime,
   reordenarQuestoesRuntime,
   salvarRespostaRuntime,
   type RuntimeAvaliacao,
@@ -35,6 +36,11 @@ import {
   salvarLeituraDigitalizacaoFirebase,
   uploadDigitalizacaoFirebase,
 } from "@/integrations/firebase/scan-data";
+import { getCurrentUser } from "@/integrations/firebase/auth";
+import {
+  deleteAssessmentStorage,
+  deleteQuestionStorage,
+} from "@/integrations/firebase/storage-cleanup";
 
 export type Json =
   | string
@@ -279,20 +285,10 @@ export async function updateAvaliacao(
 export async function deleteAvaliacao(
   avaliacaoId: string,
 ): Promise<{ storageCleanupFailed: boolean }> {
-  const scans = await listarDigitalizacoesFirebase(avaliacaoId);
-  let storageCleanupFailed = false;
-
-  for (const scan of scans) {
-    try {
-      const result = await excluirDigitalizacaoFirebase(scan.id);
-      storageCleanupFailed ||= result.storageCleanupFailed;
-    } catch {
-      storageCleanupFailed = true;
-    }
-  }
-
+  const user = getCurrentUser();
+  if (!user) throw new Error("Sua sessão do Firebase expirou. Entre novamente.");
   await excluirAvaliacaoRuntime(avaliacaoId);
-  return { storageCleanupFailed };
+  return deleteAssessmentStorage(user.uid, avaliacaoId);
 }
 
 export async function getAvaliacao(id: string): Promise<Avaliacao> {
@@ -372,8 +368,14 @@ export async function duplicateQuestao(questao: Questao, numero: number): Promis
   return created;
 }
 
-export async function deleteQuestao(id: string): Promise<void> {
+export async function deleteQuestao(id: string): Promise<{ storageCleanupFailed: boolean }> {
+  const user = getCurrentUser();
+  if (!user) throw new Error("Sua sessão do Firebase expirou. Entre novamente.");
+  const question = await obterQuestaoRuntime(id);
+  if (!question) throw new Error("Questão não encontrada.");
+
   await excluirQuestaoRuntime(id);
+  return deleteQuestionStorage(user.uid, question.avaliacaoId, id);
 }
 
 export async function moveQuestao(

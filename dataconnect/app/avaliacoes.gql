@@ -187,6 +187,54 @@ mutation AtualizarAvaliacaoSemTurma(
 }
 
 mutation ExcluirAvaliacao($id: UUID!) @auth(level: USER) @transaction {
+  query @redact {
+    avaliacoes(
+      where: {
+        id: { eq: $id }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(expr: "this.size() == 1", message: "Avaliação não encontrada.") {
+      id
+    }
+  }
+
+  digitalizacaoFolha_deleteMany(
+    where: {
+      avaliacaoId: { eq: $id }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+  )
+  respostaAluno_deleteMany(
+    where: {
+      avaliacaoId: { eq: $id }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+  )
+  envioDevolutiva_deleteMany(
+    where: {
+      avaliacaoId: { eq: $id }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+  )
+  folhaResposta_deleteMany(
+    where: {
+      avaliacaoId: { eq: $id }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+  )
+  modeloFolhaResposta_deleteMany(
+    where: {
+      avaliacaoId: { eq: $id }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+  )
+  questao_deleteMany(
+    where: {
+      avaliacaoId: { eq: $id }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+  )
   avaliacao_delete(
     first: {
       where: {
