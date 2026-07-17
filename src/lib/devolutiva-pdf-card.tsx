@@ -76,7 +76,7 @@ function FeedbackQuestionCard({ analysis }: { analysis: FeedbackQuestionAnalysis
 
       {!isDiscursive && (
         <div className={`feedback-pdf-lower-grid ${hasComment ? "has-comment" : ""}`}>
-          <section className="feedback-pdf-distribution">
+          <section className={`feedback-pdf-distribution feedback-pdf-distribution-${question.tipo}`}>
             <strong>{distributionTitle}</strong>
             {distributionAvailable ? (
               <div className="feedback-pdf-bars">

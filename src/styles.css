@@ -561,6 +561,15 @@
   padding: 3px 8px;
   color: #ffffff;
   font-weight: 800;
+  white-space: nowrap;
+}
+
+.feedback-pdf-distribution-num .feedback-pdf-bar-row {
+  grid-template-columns: 106px minmax(80px, 1fr) 44px;
+}
+
+.feedback-pdf-distribution-num .feedback-pdf-bar-label {
+  min-width: 96px;
 }
 
 .feedback-pdf-bar-track {
