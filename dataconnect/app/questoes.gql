@@ -140,6 +140,24 @@ mutation AtualizarQuestao(
 }
 
 mutation ExcluirQuestao($id: UUID!) @auth(level: USER) @transaction {
+  query @redact {
+    questoes(
+      where: {
+        id: { eq: $id }
+        ownerUid: { eq_expr: "auth.uid" }
+      }
+      limit: 1
+    ) @check(expr: "this.size() == 1", message: "Questão não encontrada.") {
+      id
+    }
+  }
+
+  respostaAluno_deleteMany(
+    where: {
+      questaoId: { eq: $id }
+      ownerUid: { eq_expr: "auth.uid" }
+    }
+  )
   questao_delete(
     first: {
       where: {
