@@ -5,6 +5,7 @@ import {
   AlertCircle,
   ArrowLeft,
   Download,
+  Eye,
   ImagePlus,
   Loader2,
   Mail,
@@ -75,6 +76,7 @@ export function StudentFeedbackEditor({
   const [saving, setSaving] = useState(false);
   const [uploadingQuestionId, setUploadingQuestionId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   const [connectingGmail, setConnectingGmail] = useState(false);
   const [gmail, setGmail] = useState<GmailConnection | null>(() =>
     getSavedGmailConnection(),
@@ -118,23 +120,25 @@ export function StudentFeedbackEditor({
   });
 
   const responsesQuery = useQuery({
-    queryKey: ["firebase-feedback-responses", assessmentId, studentId],
+    queryKey: ["firebase-feedback-responses", assessmentId],
     queryFn: async (): Promise<FeedbackResponse[]> =>
-      (await listRespostasByAvaliacao(assessmentId))
-        .filter((response) => response.aluno_id === studentId)
-        .map((response) => ({
-          aluno_id: response.aluno_id,
-          questao_id: response.questao_id,
-          resposta: response.resposta,
-          nota_manual: response.nota_manual ?? null,
-          feedback: response.feedback ?? null,
-        })),
+      (await listRespostasByAvaliacao(assessmentId)).map((response) => ({
+        aluno_id: response.aluno_id,
+        questao_id: response.questao_id,
+        resposta: response.resposta,
+        nota_manual: response.nota_manual ?? null,
+        feedback: response.feedback ?? null,
+      })),
   });
 
   const assessment = assessmentQuery.data ?? null;
   const student = studentQuery.data ?? null;
   const questions = useMemo(() => questionsQuery.data ?? [], [questionsQuery.data]);
-  const responses = useMemo(() => responsesQuery.data ?? [], [responsesQuery.data]);
+  const allResponses = useMemo(() => responsesQuery.data ?? [], [responsesQuery.data]);
+  const responses = useMemo(
+    () => allResponses.filter((response) => response.aluno_id === studentId),
+    [allResponses, studentId],
+  );
   const responsesByQuestion = useMemo(
     () => new Map(responses.map((response) => [response.questao_id, response])),
     [responses],
@@ -342,6 +346,7 @@ export function StudentFeedbackEditor({
       student,
       questions: finalQuestions as FeedbackQuestion[],
       responses,
+      classResponses: allResponses,
       teacherEmail: userQuery.data.email,
     });
   }
@@ -367,6 +372,28 @@ export function StudentFeedbackEditor({
       downloadBlob(pdf, `devolutiva-${student?.nome ?? "aluno"}.pdf`);
     } catch (error) {
       toast.error(message(error));
+    }
+  }
+
+  async function preview() {
+    const previewWindow = window.open("", "_blank");
+    if (!previewWindow) {
+      return toast.error("Permita pop-ups para visualizar o PDF antes do download.");
+    }
+    previewWindow.document.title = "Preparando devolutiva…";
+    previewWindow.document.body.innerHTML =
+      '<p style="font-family:Arial,sans-serif;padding:24px">Preparando a visualização do PDF…</p>';
+    setPreviewing(true);
+    try {
+      const pdf = await buildPdf();
+      const url = URL.createObjectURL(pdf);
+      previewWindow.location.href = url;
+      window.setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1_000);
+    } catch (error) {
+      previewWindow.close();
+      toast.error(message(error));
+    } finally {
+      setPreviewing(false);
     }
   }
 
@@ -480,7 +507,7 @@ export function StudentFeedbackEditor({
           <div className="border-b border-border p-4">
             <h2 className="font-semibold">Gabarito original da prova</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Este gabarito será incluído obrigatoriamente no PDF da devolutiva.
+              As respostas oficiais aparecem dentro do cartão de cada questão no PDF.
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -639,7 +666,20 @@ export function StudentFeedbackEditor({
             <Button
               type="button"
               variant="outline"
-              disabled={saving || sending}
+              disabled={saving || sending || previewing}
+              onClick={() => void preview()}
+            >
+              {previewing ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Eye className="mr-2 h-4 w-4" />
+              )}
+              Visualizar PDF
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving || sending || previewing}
               onClick={() => void download()}
             >
               <Download className="mr-2 h-4 w-4" /> Baixar PDF
@@ -701,7 +741,7 @@ function sanitizeFilename(value: string): string {
 }
 
 function emailText(studentName: string, assessmentTitle: string, teacherEmail: string): string {
-  return `Olá, ${studentName}.\n\nSegue em anexo a devolutiva da avaliação “${assessmentTitle}”. O PDF contém o gabarito original da prova e, nas questões discursivas, a resposta-modelo, sua pontuação e os comentários do professor.\n\nAtenciosamente,\n${teacherEmail}`;
+  return `Olá, ${studentName}.\n\nSegue em anexo a devolutiva da avaliação “${assessmentTitle}”. O PDF apresenta sua nota, o resumo do desempenho, a análise de cada questão, as estatísticas da turma e os comentários do professor.\n\nAtenciosamente,\n${teacherEmail}`;
 }
 
 function downloadBlob(blob: Blob, filename: string) {
