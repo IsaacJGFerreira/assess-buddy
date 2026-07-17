@@ -418,14 +418,15 @@ export async function saveResposta(input: {
 export async function getLatestAnswerSheetModel(
   avaliacaoId: string,
 ): Promise<ModeloFolhaResposta | null> {
-  const modelos = await listarModelosFolhaFirebase(avaliacaoId);
-  return modelos[0] ? mapModelo(modelos[0]) : null;
+  return (await listAnswerSheetModels(avaliacaoId))[0] ?? null;
 }
 
 export async function listAnswerSheetModels(
   avaliacaoId: string,
 ): Promise<ModeloFolhaResposta[]> {
-  return (await listarModelosFolhaFirebase(avaliacaoId)).map(mapModelo);
+  return (await listarModelosFolhaFirebase(avaliacaoId))
+    .map(mapModelo)
+    .sort((left, right) => right.versao - left.versao);
 }
 
 export async function createOrGetAnswerSheet({
@@ -623,14 +624,7 @@ export function calcularNotaAluno(
   };
 }
 
-export function alternativas(q: Questao): string[] {
-  if (q.tipo === "mc") {
-    const n = q.qtd_alternativas ?? 5;
-    return ["A", "B", "C", "D", "E", "F", "G"].slice(0, n);
-  }
-  if (q.tipo === "ce") return ["C", "E"];
-  return [];
-}
+export { alternativas } from "@/lib/question-options";
 
 function mapAvaliacao(value: RuntimeAvaliacao): Avaliacao {
   return {
