@@ -1,4 +1,4 @@
-import { alternativas, type Aluno, type Avaliacao, type Questao } from "@/lib/domain";
+import type { Aluno, Avaliacao, Questao } from "@/lib/domain";
 import type { AnswerSheetLayout } from "@/lib/answer-sheet-layout";
 import { buildAnswerSheetPages, type AnswerSheetPageDescriptor } from "@/lib/answer-sheet-pages";
 import {
@@ -7,6 +7,7 @@ import {
   formatMatriculaForSheet,
   type AnswerSheetIdentificationMode,
 } from "@/lib/answer-sheet-identification";
+import { alternativas } from "@/lib/question-options";
 
 interface AnswerSheetProps {
   avaliacao: Avaliacao;
@@ -94,14 +95,13 @@ function AnswerSheetPage({
       <AlignmentMarkers />
 
       <div className={`answer-sheet-body ${hasNumericPanel ? "has-numeric-panel" : ""}`}>
-        {identificationMode !== "none" && (
-          <IdentifierCard
-            digits={identifierDigits}
-            matricula={matricula}
-            pageNumber={pageNumber}
-            studentName={studentName}
-          />
-        )}
+        <IdentifierCard
+          digits={identifierDigits}
+          hidden={identificationMode === "none"}
+          matricula={matricula}
+          pageNumber={pageNumber}
+          studentName={studentName}
+        />
 
         {page.kind === "main" && columnQuestions.length > 0 ? (
           <div className="answer-sheet-objective-panel">
@@ -221,22 +221,29 @@ function NumericCard({ question, pageNumber }: { question: Questao; pageNumber: 
 
 function IdentifierCard({
   digits,
+  hidden,
   matricula,
   pageNumber,
   studentName,
 }: {
   digits: number;
+  hidden: boolean;
   matricula: string | null;
   pageNumber: number;
   studentName: string | null;
 }) {
+  const width = digits * 5 + Math.max(0, digits - 1) * 1.1 + 3.9;
+
   return (
-    <aside className="answer-sheet-identifier-card" aria-label="Matrícula">
-      {studentName && (
-        <div className="answer-sheet-identifier-name" title={studentName}>
-          {studentName}
-        </div>
-      )}
+    <aside
+      className={`answer-sheet-identifier-card ${hidden ? "is-placeholder" : ""}`}
+      style={{ width: `${width}mm` }}
+      aria-hidden={hidden || undefined}
+      aria-label={hidden ? undefined : "Matrícula"}
+    >
+      <div className="answer-sheet-identifier-name" title={studentName ?? undefined}>
+        {studentName ?? "\u00a0"}
+      </div>
       <div className="answer-sheet-identifier-title">Matrícula</div>
       <div className="answer-sheet-identifier-grid">
         {Array.from({ length: digits }, (_, digitIndex) => (
@@ -263,6 +270,7 @@ function IdentifierCard({
                 kind="identifier"
                 digitIndex={digitIndex}
                 filled={matricula?.[digitIndex] === String(digit)}
+                omrEnabled={!hidden}
               />
             ))}
           </div>
@@ -283,6 +291,7 @@ function Bubble({
   kind,
   digitIndex,
   filled = false,
+  omrEnabled = true,
 }: {
   label: string;
   dense?: boolean;
@@ -294,20 +303,21 @@ function Bubble({
   kind: "objective" | "numeric" | "identifier";
   digitIndex?: number;
   filled?: boolean;
+  omrEnabled?: boolean;
 }) {
   const resolvedQuestionId = question?.id ?? questionId;
   const resolvedQuestionNumber = question?.numero ?? questionNumber;
   return (
     <span
       className={`answer-sheet-bubble ${dense ? "is-dense" : ""} ${filled ? "is-prefilled" : ""}`}
-      data-omr-bubble="true"
-      data-omr-page={pageNumber}
-      data-omr-question-id={resolvedQuestionId}
-      data-omr-question-number={resolvedQuestionNumber}
-      data-omr-kind={kind}
-      data-omr-value={value}
-      data-omr-digit-index={digitIndex}
-      data-omr-prefilled={filled || undefined}
+      data-omr-bubble={omrEnabled ? "true" : undefined}
+      data-omr-page={omrEnabled ? pageNumber : undefined}
+      data-omr-question-id={omrEnabled ? resolvedQuestionId : undefined}
+      data-omr-question-number={omrEnabled ? resolvedQuestionNumber : undefined}
+      data-omr-kind={omrEnabled ? kind : undefined}
+      data-omr-value={omrEnabled ? value : undefined}
+      data-omr-digit-index={omrEnabled ? digitIndex : undefined}
+      data-omr-prefilled={omrEnabled && filled ? true : undefined}
     >
       {label}
     </span>

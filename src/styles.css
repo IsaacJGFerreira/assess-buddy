@@ -520,10 +520,14 @@
 }
 
 .answer-sheet-identifier-card {
-  width: max-content;
+  box-sizing: border-box;
   align-self: start;
   border: 0.45mm solid #111;
   break-inside: avoid;
+}
+
+.answer-sheet-identifier-card.is-placeholder {
+  visibility: hidden;
 }
 
 .answer-sheet-identifier-title {
@@ -543,6 +547,9 @@
 }
 
 .answer-sheet-identifier-name {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 5mm;
   max-width: 100%;
   padding: 1mm 1.5mm;
   border-bottom: 0.3mm solid #111;

@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -65,6 +65,7 @@ import {
 } from "@/lib/domain";
 import { batchExportAnswerSheetsAsZip } from "@/lib/answer-sheet-batch";
 import { exportAnswerSheetAsPdf, exportAnswerSheetAsPng } from "@/lib/answer-sheet-export";
+import { restoreAnswerSheetModel } from "@/lib/answer-sheet-model";
 import {
   DEFAULT_ANSWER_SHEET_LAYOUT,
   type AnswerSheetLayout,
@@ -631,7 +632,8 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
   const [identificationMode, setIdentificationMode] =
     useState<AnswerSheetIdentificationMode>("none");
   const [selectedStudentId, setSelectedStudentId] = useState("");
-  const [blankIdentifierDigits, setBlankIdentifierDigits] = useState(DEFAULT_IDENTIFIER_DIGITS);
+  const [identifierDigitsOverride, setIdentifierDigitsOverride] = useState<number | null>(null);
+  const hydratedModelIdRef = useRef<string | null>(null);
   const [preview, setPreview] = useState<{
     identification: IdentificacaoFolhaResposta | null;
     identificationMode: AnswerSheetIdentificationMode;
@@ -652,11 +654,24 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
     enabled: Boolean(avaliacao.turma_id),
   });
 
+  useEffect(() => {
+    const model = savedModel.data;
+    if (!model || hydratedModelIdRef.current === model.id) return;
+    try {
+      const restored = restoreAnswerSheetModel(model, avaliacao);
+      setOrientation(restored.layout.orientation);
+      setColumns(restored.layout.columns);
+      setRowsPerColumn(restored.layout.rowsPerColumn);
+      setIdentificationMode(restored.identification.mode);
+      setIdentifierDigitsOverride(restored.identification.digits);
+      hydratedModelIdRef.current = model.id;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível carregar o padrão salvo.");
+    }
+  }, [avaliacao, savedModel.data]);
+
   const derivedIdentifierDigits = determineIdentifierDigits(students.data ?? []);
-  const identifierDigits =
-    identificationMode === "blank"
-      ? clampIdentifierDigits(blankIdentifierDigits)
-      : derivedIdentifierDigits;
+  const identifierDigits = clampIdentifierDigits(identifierDigitsOverride ?? derivedIdentifierDigits);
   const eligibleStudents = (students.data ?? []).filter((student) =>
     isStudentEligibleForPrefilledSheet(student, identifierDigits),
   );
@@ -688,9 +703,10 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
       });
     },
     onSuccess: async (identification) => {
-      await queryClient.invalidateQueries({
-        queryKey: ["firebase-modelo-folha", avaliacao.id],
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["firebase-modelo-folha", avaliacao.id] }),
+        queryClient.invalidateQueries({ queryKey: ["answer-sheet-models", avaliacao.id] }),
+      ]);
       setPreview({
         identification,
         identificationMode,
@@ -840,9 +856,9 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
                   type="number"
                   min={MIN_IDENTIFIER_DIGITS}
                   max={MAX_IDENTIFIER_DIGITS}
-                  value={blankIdentifierDigits}
+                  value={identifierDigits}
                   onChange={(event) =>
-                    setBlankIdentifierDigits(clampIdentifierDigits(Number(event.target.value)))
+                    setIdentifierDigitsOverride(clampIdentifierDigits(Number(event.target.value)))
                   }
                 />
                 <p className="text-xs text-muted-foreground">
@@ -956,13 +972,13 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="text-sm font-medium">
             {savedModel.isPending
-              ? "Carregando modelo salvo…"
+              ? "Carregando padrão salvo…"
               : savedModel.data
-                ? `Próxima versão: ${savedModel.data.versao + 1}`
-                : "Primeira versão da folha"}
+                ? `Padrão atual: versão ${savedModel.data.versao}`
+                : "Nenhum padrão salvo"}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            A folha será salva no Firebase no menor tamanho necessário.
+            Ao salvar, este formato passa a ser o padrão da avaliação e da próxima leitura.
           </p>
           <Button
             type="button"
@@ -980,7 +996,7 @@ function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Que
             ) : (
               <FileText className="mr-2 h-4 w-4" />
             )}
-            Salvar e abrir folha
+            Salvar padrão e abrir folha
           </Button>
         </div>
       </aside>
