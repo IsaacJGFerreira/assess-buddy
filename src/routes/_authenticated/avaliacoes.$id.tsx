@@ -1266,18 +1266,47 @@ function CorrecaoTab({ avaliacao }: { avaliacao: Avaliacao }) {
     respostasQuery.data?.filter((resposta) => resposta.aluno_id === active).forEach((resposta) => map.set(resposta.questao_id, resposta.resposta ?? ""));
     return map;
   }, [respostasQuery.data, active]);
+  const responsesByQuestion = useMemo(
+    () =>
+      new Map(
+        (respostasQuery.data ?? [])
+          .filter((resposta) => resposta.aluno_id === active)
+          .map((resposta) => [resposta.questao_id, resposta]),
+      ),
+    [respostasQuery.data, active],
+  );
 
   const save = useMutation({
-    mutationFn: ({ questaoId, valor }: { questaoId: string; valor: string }) => {
+    mutationFn: ({
+      questaoId,
+      resposta,
+      notaManual,
+    }: {
+      questaoId: string;
+      resposta?: string | null;
+      notaManual?: number | null;
+    }) => {
       if (!turmaId || !active) throw new Error("Selecione uma turma e um aluno.");
-      return saveResposta({ avaliacaoId, turmaId, alunoId: active, questaoId, resposta: valor || null });
+      return saveResposta({
+        avaliacaoId,
+        turmaId,
+        alunoId: active,
+        questaoId,
+        resposta,
+        notaManual,
+      });
     },
     onSuccess: async (saved) => {
       queryClient.setQueryData(respostasKey(avaliacaoId), (current: Awaited<ReturnType<typeof listRespostasByAvaliacao>> = []) => {
         const exists = current.some((item) => item.id === saved.id);
         return exists ? current.map((item) => item.id === saved.id ? saved : item) : [...current, saved];
       });
-      await queryClient.invalidateQueries({ queryKey: respostasKey(avaliacaoId) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: respostasKey(avaliacaoId) }),
+        queryClient.invalidateQueries({
+          queryKey: ["firebase-feedback-responses", avaliacaoId, active],
+        }),
+      ]);
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -1301,28 +1330,35 @@ function CorrecaoTab({ avaliacao }: { avaliacao: Avaliacao }) {
       <div className="overflow-hidden rounded-lg border border-border bg-card">
         <div className="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">Alunos</div>
         {alunosQuery.data.map((aluno) => {
-          const filled = respostasQuery.data?.filter((r) => r.aluno_id === aluno.id && r.resposta).length ?? 0;
+          const filled = respostasQuery.data?.filter(
+            (r) => r.aluno_id === aluno.id && (r.resposta || r.nota_manual != null),
+          ).length ?? 0;
           return <button key={aluno.id} type="button" onClick={() => setAlunoId(aluno.id)} className={`w-full border-b border-border px-3 py-2 text-left text-sm last:border-0 hover:bg-muted/50 ${active === aluno.id ? "bg-muted" : ""}`}><div className="font-medium">{aluno.nome}</div><div className="text-xs text-muted-foreground">{filled}/{questoesQuery.data.length} respondidas</div></button>;
         })}
       </div>
       <div className="space-y-3">
-        {activeAluno && <div className="flex items-center justify-between rounded-lg border border-border bg-card p-4"><div><div className="font-semibold">{activeAluno.nome}</div><div className="text-xs text-muted-foreground">Informe as respostas marcadas pelo aluno.</div></div><Button size="sm" variant="outline" disabled={setStatus.isPending} onClick={() => setStatus.mutate("corrigida")}>Marcar como corrigida</Button></div>}
+        {activeAluno && <div className="flex items-center justify-between rounded-lg border border-border bg-card p-4"><div><div className="font-semibold">{activeAluno.nome}</div><div className="text-xs text-muted-foreground">Informe as respostas marcadas e as notas discursivas do aluno.</div></div><Button size="sm" variant="outline" disabled={setStatus.isPending} onClick={() => setStatus.mutate("corrigida")}>Marcar como corrigida</Button></div>}
         <div className="divide-y divide-border rounded-lg border border-border bg-card">
           {questoesQuery.data.map((questao) => {
             const value = answersByQuestion.get(questao.id) ?? "";
+            const manualScore = responsesByQuestion.get(questao.id)?.nota_manual ?? null;
             const result = corrigirQuestao(questao, value);
-            return <div key={questao.id} className="flex items-center gap-4 p-3"><div className="w-10 font-medium">{questao.numero}.</div><div className="flex-1"><RespostaInput questao={questao} value={value} onSubmit={(valor) => save.mutate({ questaoId: questao.id, valor })} /></div><div className="w-28 text-right text-xs">{questao.anulada ? <span className="text-muted-foreground">anulada</span> : !value ? <span className="text-muted-foreground">em branco</span> : <span className={`rounded-full px-2 py-0.5 ${result.situacao === "correta" ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>{result.situacao === "correta" ? "✓ correta" : "✕ incorreta"}</span>}</div></div>;
+            return <div key={questao.id} className="flex items-center gap-4 p-3"><div className="w-10 font-medium">{questao.numero}.</div><div className="flex-1"><RespostaInput questao={questao} value={value} manualScore={manualScore} onSubmit={(resposta) => save.mutate({ questaoId: questao.id, resposta: resposta || null })} onManualScoreSubmit={(notaManual) => save.mutate({ questaoId: questao.id, notaManual })} /></div><div className="w-28 text-right text-xs">{questao.anulada ? <span className="text-muted-foreground">anulada</span> : questao.tipo === "disc" ? manualScore == null ? <span className="text-muted-foreground">sem nota</span> : <span className="rounded-full bg-primary/10 px-2 py-0.5 text-primary">{formatDecimal(manualScore)} / {formatDecimal(Number(questao.valor))}</span> : !value ? <span className="text-muted-foreground">em branco</span> : <span className={`rounded-full px-2 py-0.5 ${result.situacao === "correta" ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>{result.situacao === "correta" ? "✓ correta" : "✕ incorreta"}</span>}</div></div>;
           })}
         </div>
       </div>
     </div>
   );
 
-  return <div className="space-y-6"><AnswerSheetUploadPanel avaliacao={avaliacao} alunos={alunosQuery.data ?? []} /><section className="overflow-hidden rounded-lg border border-border bg-card"><button type="button" className="flex w-full items-center justify-between gap-4 p-4 text-left hover:bg-muted/40" onClick={() => setManualOpen((open) => !open)}><div><h2 className="text-lg font-semibold">Correção manual</h2><p className="text-sm text-muted-foreground">Expanda para conferir ou informar as respostas.</p></div><ChevronDown className={`h-5 w-5 transition-transform ${manualOpen ? "rotate-180" : ""}`} /></button>{manualOpen && <div className="border-t border-border p-4">{manualContent}</div>}</section></div>;
+  return <div className="space-y-6"><AnswerSheetUploadPanel avaliacao={avaliacao} alunos={alunosQuery.data ?? []} /><section className="overflow-hidden rounded-lg border border-border bg-card"><button type="button" className="flex w-full items-center justify-between gap-4 p-4 text-left hover:bg-muted/40" onClick={() => setManualOpen((open) => !open)}><div><h2 className="text-lg font-semibold">Correção manual</h2><p className="text-sm text-muted-foreground">Expanda para conferir respostas e informar notas discursivas.</p></div><ChevronDown className={`h-5 w-5 transition-transform ${manualOpen ? "rotate-180" : ""}`} /></button>{manualOpen && <div className="border-t border-border p-4">{manualContent}</div>}</section></div>;
 }
 
-function RespostaInput({ questao, value, onSubmit }: { questao: Questao; value: string; onSubmit: (value: string) => void }) {
-  if (questao.tipo === "disc") return <span className="text-xs text-muted-foreground">Correção discursiva na devolutiva do aluno.</span>;
+function RespostaInput({ questao, value, manualScore, onSubmit, onManualScoreSubmit }: { questao: Questao; value: string; manualScore: number | null; onSubmit: (value: string) => void; onManualScoreSubmit: (value: number | null) => void }) {
+  if (questao.tipo === "disc") {
+    const maximum = Number(questao.valor);
+    const currentValue = manualScore == null ? "" : formatDecimal(manualScore);
+    return <div className="flex items-center gap-2"><Label htmlFor={`manual-score-${questao.id}`} className="text-xs">Nota</Label><Input key={`${questao.id}-${currentValue}`} id={`manual-score-${questao.id}`} className="h-9 w-28" inputMode="decimal" defaultValue={currentValue} placeholder="0" onBlur={(event) => { const raw = event.currentTarget.value.trim().replace(",", "."); if (!raw) { if (manualScore != null) onManualScoreSubmit(null); return; } const parsed = Number(raw); if (!Number.isFinite(parsed) || parsed < 0 || parsed > maximum) { toast.error(`A nota deve ficar entre 0 e ${formatDecimal(maximum)}.`); event.currentTarget.value = currentValue; return; } const normalized = Math.round(parsed * 100) / 100; event.currentTarget.value = formatDecimal(normalized); if (normalized !== manualScore) onManualScoreSubmit(normalized); }} /><span className="text-xs text-muted-foreground">/ {formatDecimal(maximum)}</span></div>;
+  }
   if (questao.tipo === "num") {
     const digits = questao.num_digitos ?? 3;
     return <Input key={`${questao.id}-${value}`} className="h-9 w-32 font-mono" defaultValue={value} maxLength={digits} placeholder={"0".repeat(digits)} onBlur={(event) => { const raw = event.currentTarget.value.replace(/\D/g, ""); const normalized = raw ? raw.padStart(digits, "0").slice(-digits) : ""; if (normalized !== value) onSubmit(normalized); }} />;
@@ -1418,6 +1454,7 @@ function DevolutivaTab({
           assessmentId={avaliacaoId}
           studentId={activeStudentId}
           embedded
+          showStudentScores={feedbackQueue.length === 1}
         />
       </div>
     );
