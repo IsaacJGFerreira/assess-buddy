@@ -54,3 +54,16 @@ export function getFirebaseStorage(): FirebaseStorage {
 
   return getStorage(getFirebaseApp());
 }
+
+export function getFirebaseServiceIdentity(): {
+  projectId: string;
+  storageBucket: string;
+} {
+  const app = getFirebaseApp();
+  const storage = getFirebaseStorage();
+
+  return {
+    projectId: app.options.projectId as string,
+    storageBucket: storage.app.options.storageBucket as string,
+  };
+}
