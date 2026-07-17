@@ -1,4 +1,7 @@
+import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
+
+import { renderRichCommentToHtml } from "@/lib/rich-comment-renderer";
 
 export type FeedbackQuestionType = "mc" | "ce" | "num" | "disc";
 
@@ -151,6 +154,93 @@ export async function generateFeedbackPdf(input: FeedbackPdfInput): Promise<Blob
     }
   };
 
+  const addRichComment = async (markdown: string, questionNumber: number) => {
+    const capture = document.createElement("div");
+    capture.className = "feedback-rich-comment-capture";
+    capture.style.position = "fixed";
+    capture.style.left = "-10000px";
+    capture.style.top = "0";
+    capture.style.width = "760px";
+    capture.style.boxSizing = "border-box";
+    capture.style.padding = "20px";
+    capture.style.background = "#ffffff";
+    capture.style.color = "#111111";
+    capture.innerHTML = renderRichCommentToHtml(markdown);
+    document.body.appendChild(capture);
+
+    try {
+      await prepareRichCommentImages(capture);
+      if (document.fonts?.ready) await document.fonts.ready;
+
+      const canvas = await html2canvas(capture, {
+        backgroundColor: "#ffffff",
+        logging: false,
+        scale: 2,
+        useCORS: true,
+        windowWidth: 800,
+      });
+      const targetWidth = CONTENT_WIDTH - 8;
+      const mmPerPixel = targetWidth / canvas.width;
+      let offset = 0;
+
+      while (offset < canvas.height) {
+        if (PAGE_HEIGHT - MARGIN - y < 18) {
+          doc.addPage();
+          y = MARGIN;
+        }
+
+        const availableHeight = PAGE_HEIGHT - MARGIN - y;
+        const sliceHeight = Math.max(
+          1,
+          Math.min(canvas.height - offset, Math.floor(availableHeight / mmPerPixel)),
+        );
+        const slice = document.createElement("canvas");
+        slice.width = canvas.width;
+        slice.height = sliceHeight;
+        const context = slice.getContext("2d");
+        if (!context) throw new Error("Não foi possível preparar o comentário para o PDF.");
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, slice.width, slice.height);
+        context.drawImage(
+          canvas,
+          0,
+          offset,
+          canvas.width,
+          sliceHeight,
+          0,
+          0,
+          canvas.width,
+          sliceHeight,
+        );
+
+        const renderedHeight = sliceHeight * mmPerPixel;
+        doc.addImage(
+          slice.toDataURL("image/png"),
+          "PNG",
+          MARGIN + 4,
+          y,
+          targetWidth,
+          renderedHeight,
+        );
+        y += renderedHeight;
+        offset += sliceHeight;
+
+        if (offset < canvas.height) {
+          doc.addPage();
+          y = MARGIN;
+        }
+      }
+      y += 4;
+    } catch {
+      writeWrapped(`O comentário formatado da questão ${questionNumber} não pôde ser renderizado.`, {
+        fontSize: 8.5,
+        lineHeight: 4,
+      });
+    } finally {
+      capture.remove();
+    }
+  };
+
   doc.setDrawColor(20, 20, 20);
   doc.setLineWidth(0.6);
   doc.line(MARGIN, y, PAGE_WIDTH - MARGIN, y);
@@ -286,6 +376,28 @@ export async function generateFeedbackPdf(input: FeedbackPdfInput): Promise<Blob
     y = Math.max(y + 4, boxTop + estimatedHeight + 3);
   }
 
+  const commentedQuestions = input.questions.filter(
+    (question) => question.orientacao_correcao?.trim(),
+  );
+  if (commentedQuestions.length > 0) {
+    writeSectionTitle("RESPOSTAS COMENTADAS");
+    writeWrapped(
+      "A seguir estão os comentários preparados pelo professor para os itens selecionados.",
+      { fontSize: 9, lineHeight: 4.2, gapAfter: 3 },
+    );
+
+    for (const question of commentedQuestions) {
+      addPageIfNeeded(14);
+      writeWrapped(`Questão ${question.numero} · ${questionTypeLabel(question.tipo)}`, {
+        fontSize: 10,
+        bold: true,
+        lineHeight: 4.5,
+        gapAfter: 2,
+      });
+      await addRichComment(question.orientacao_correcao?.trim() ?? "", question.numero);
+    }
+  }
+
   addPageIfNeeded(25);
   writeSectionTitle("ORIENTAÇÃO PARA O ALUNO");
   writeWrapped(
@@ -369,6 +481,28 @@ async function prepareImage(url: string): Promise<PreparedImage> {
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
+}
+
+async function prepareRichCommentImages(container: HTMLElement): Promise<void> {
+  const images = Array.from(container.querySelectorAll("img"));
+  await Promise.all(
+    images.map(async (image) => {
+      const source = image.getAttribute("src");
+      if (!source) return;
+      try {
+        const prepared = await prepareImage(source);
+        image.removeAttribute("crossorigin");
+        image.src = prepared.dataUrl;
+        if (typeof image.decode === "function") await image.decode();
+      } catch {
+        const fallback = document.createElement("p");
+        fallback.textContent = image.alt
+          ? `Imagem indisponível: ${image.alt}`
+          : "Imagem do comentário indisponível.";
+        image.replaceWith(fallback);
+      }
+    }),
+  );
 }
 
 function loadImage(url: string): Promise<HTMLImageElement> {

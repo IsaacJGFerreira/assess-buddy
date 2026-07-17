@@ -24,6 +24,7 @@ import { toast } from "sonner";
 import { AnswerSheet } from "@/components/answer-sheet";
 import { AnswerSheetUploadPanel } from "@/components/answer-sheet-upload-panel";
 import { StudentFeedbackEditor } from "@/components/class-feedback-panel";
+import { FeedbackCommentConfigurator } from "@/components/feedback-comment-configurator";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -1381,6 +1382,7 @@ function DevolutivaTab({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [feedbackQueue, setFeedbackQueue] = useState<string[] | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [configuringSheet, setConfiguringSheet] = useState(false);
 
   const alunos = alunosQuery.data ?? [];
   const allSelected = alunos.length > 0 && selectedIds.length === alunos.length;
@@ -1409,6 +1411,16 @@ function DevolutivaTab({
     if (queue.length === 0) return;
     setFeedbackQueue(queue);
     setActiveIndex(0);
+  }
+
+  if (configuringSheet) {
+    return (
+      <FeedbackCommentConfigurator
+        assessmentId={avaliacaoId}
+        selectedStudentCount={selectedIds.length}
+        onBack={() => setConfiguringSheet(false)}
+      />
+    );
   }
 
   if (activeStudentId && feedbackQueue) {
@@ -1553,9 +1565,19 @@ function DevolutivaTab({
             ? "Nenhum aluno selecionado."
             : `${selectedIds.length} aluno${selectedIds.length === 1 ? "" : "s"} selecionado${selectedIds.length === 1 ? "" : "s"}.`}
         </span>
-        <Button type="button" disabled={selectedIds.length === 0} onClick={startFeedback}>
-          Fazer devolutiva para {selectedIds.length === 1 ? "este aluno" : "estes alunos"}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={selectedIds.length === 0}
+            onClick={() => setConfiguringSheet(true)}
+          >
+            Configurar folha de devolução
+          </Button>
+          <Button type="button" disabled={selectedIds.length === 0} onClick={startFeedback}>
+            Fazer devolutiva para {selectedIds.length === 1 ? "este aluno" : "estes alunos"}
+          </Button>
+        </div>
       </div>
     </div>
   );
