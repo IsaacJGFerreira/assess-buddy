@@ -33,13 +33,6 @@ service firebase.storage {
         if authenticatedOwner(userId) && validModelImage();
     }
 
-    match /usuarios/{userId}/comentarios-devolutiva/{allPaths=**} {
-      allow read, delete: if authenticatedOwner(userId);
-
-      allow create, update:
-        if authenticatedOwner(userId) && validModelImage();
-    }
-
     match /{allPaths=**} {
       allow read, write: if false;
     }

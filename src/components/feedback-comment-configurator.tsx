@@ -67,7 +67,7 @@ export function FeedbackCommentConfigurator({
 
     const filename = sanitizeFilename(file.name);
     const path =
-      `usuarios/${user.uid}/comentarios-devolutiva/${assessmentId}/${question.id}/` +
+      `usuarios/${user.uid}/imagens-modelo/${assessmentId}/${question.id}/comentarios/` +
       `${crypto.randomUUID()}-${filename}`;
     const storageReference = ref(getFirebaseStorage(), path);
 
