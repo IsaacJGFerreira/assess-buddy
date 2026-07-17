@@ -226,13 +226,11 @@ function drawStudentAndScoreCards(
   doc.text(formatNumber(analysis.score), scoreX + scoreWidth * 0.72, top + 27, {
     align: "center",
   });
-  doc.setFontSize(12);
-  doc.text(`${analysis.percentage}%`, scoreX + scoreWidth * 0.72, top + 36, {
-    align: "center",
-  });
   if (analysis.questions.some((question) => question.result.statusKey === "pending")) {
-    doc.setFontSize(6.5);
-    doc.text("Nota provisória", scoreX + scoreWidth * 0.72, top + 41, { align: "center" });
+    doc.setFontSize(7);
+    doc.text("Nota provisória", scoreX + scoreWidth * 0.72, top + 36.5, {
+      align: "center",
+    });
   }
   return top + height + 6;
 }
@@ -336,14 +334,14 @@ function drawContinuationHeader(
   setText(doc, [255, 255, 255]);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(6.5);
-  doc.text("Sua nota", cardX + 5, cardY + 5);
+  doc.text("Sua nota", cardX + cardWidth / 2, cardY + 5, { align: "center" });
   doc.setFontSize(14);
-  doc.text(formatNumber(analysis.score), cardX + 5, cardY + 14);
-  doc.setFontSize(9);
-  doc.text(`${analysis.percentage}%`, cardX + cardWidth - 5, cardY + 13.5, { align: "right" });
+  doc.text(formatNumber(analysis.score), cardX + cardWidth / 2, cardY + 14, {
+    align: "center",
+  });
   if (analysis.questions.some((question) => question.result.statusKey === "pending")) {
     doc.setFontSize(5.3);
-    doc.text("provisória", cardX + cardWidth - 5, cardY + 17, { align: "right" });
+    doc.text("provisória", cardX + cardWidth / 2, cardY + 17.5, { align: "center" });
   }
 
   setDraw(doc, BLUE_BORDER);
@@ -486,32 +484,29 @@ async function prepareCardImages(container: HTMLElement): Promise<void> {
 }
 
 async function prepareImage(url: string): Promise<string> {
-  const response = await fetch(url);
+  if (url.startsWith("data:")) return url;
+
+  const response = await fetch(url, {
+    cache: "no-store",
+    credentials: "omit",
+    mode: "cors",
+    referrerPolicy: "no-referrer",
+  });
   if (!response.ok) throw new Error("Imagem indisponível");
   const blob = await response.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  try {
-    const image = await loadImage(objectUrl);
-    const canvas = document.createElement("canvas");
-    canvas.width = image.naturalWidth || image.width;
-    canvas.height = image.naturalHeight || image.height;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("Não foi possível preparar a imagem");
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(image, 0, 0);
-    return canvas.toDataURL("image/jpeg", 0.9);
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
+  if (blob.size === 0) throw new Error("Imagem vazia");
+  return blobToDataUrl(blob);
 }
 
-function loadImage(url: string): Promise<HTMLImageElement> {
+function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Não foi possível carregar a imagem"));
-    image.src = url;
+    const reader = new FileReader();
+    reader.onload = () =>
+      typeof reader.result === "string"
+        ? resolve(reader.result)
+        : reject(new Error("Não foi possível preparar a imagem"));
+    reader.onerror = () => reject(reader.error ?? new Error("Não foi possível ler a imagem"));
+    reader.readAsDataURL(blob);
   });
 }
 

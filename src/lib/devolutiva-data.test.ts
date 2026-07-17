@@ -108,6 +108,20 @@ test("renders a complete discursive card with model answer and formatted comment
   assert.match(html, /<strong>conclusão<\/strong>/);
 });
 
+test("marks the numerical distribution for its wider labels", () => {
+  const analysis = buildFeedbackAnalysis({
+    questions,
+    responses: studentResponses,
+    classResponses,
+  });
+  const html = renderFeedbackQuestionCard(analysis.questions[3]);
+
+  assert.match(html, /feedback-pdf-distribution-num/);
+  assert.match(html, /Acertaram/);
+  assert.match(html, /Erraram/);
+  assert.match(html, /Em branco/);
+});
+
 test("does not generate class statistics for an annulled question", () => {
   const annulled = { ...question("qa", 1, "mc", "A", 1), anulada: true };
   const analysis = buildFeedbackAnalysis({
