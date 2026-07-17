@@ -15,7 +15,6 @@ import {
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { obterAlunoFirebase } from "@/integrations/firebase/academic-data";
 import { getCurrentUser } from "@/integrations/firebase/auth";
@@ -32,7 +31,6 @@ import {
   getAvaliacao,
   listQuestoes,
   listRespostasByAvaliacao,
-  saveResposta,
   updateQuestao,
   type Questao,
 } from "@/lib/domain";
@@ -48,9 +46,6 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 type AssessmentRecord = FeedbackAssessment & { turma_id: string | null };
 type DiscursiveDraft = {
-  answer: string;
-  score: string;
-  feedback: string;
   modelAnswer: string;
   imagePath: string | null;
   originalImagePath: string | null;
@@ -66,10 +61,12 @@ export function StudentFeedbackEditor({
   assessmentId,
   studentId,
   embedded = false,
+  showStudentScores = true,
 }: {
   assessmentId: string;
   studentId: string;
   embedded?: boolean;
+  showStudentScores?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [drafts, setDrafts] = useState<Record<string, DiscursiveDraft>>({});
@@ -138,32 +135,27 @@ export function StudentFeedbackEditor({
   const student = studentQuery.data ?? null;
   const questions = useMemo(() => questionsQuery.data ?? [], [questionsQuery.data]);
   const responses = useMemo(() => responsesQuery.data ?? [], [responsesQuery.data]);
+  const responsesByQuestion = useMemo(
+    () => new Map(responses.map((response) => [response.questao_id, response])),
+    [responses],
+  );
   const discursiveQuestions = useMemo(
     () => questions.filter((question) => question.tipo === "disc"),
     [questions],
   );
   const score = useMemo(
-    () =>
-      calculateFeedbackScore(
-        questions as FeedbackQuestion[],
-        mergeDrafts(responses, studentId, drafts),
-      ),
-    [questions, responses, studentId, drafts],
+    () => calculateFeedbackScore(questions as FeedbackQuestion[], responses),
+    [questions, responses],
   );
 
   useEffect(() => {
-    const byQuestion = new Map(responses.map((response) => [response.questao_id, response]));
     setDrafts(
       Object.fromEntries(
         discursiveQuestions.map((question) => {
-          const response = byQuestion.get(question.id);
           const imagePath = question.resposta_modelo_imagem_path ?? null;
           return [
             question.id,
             {
-              answer: response?.resposta ?? "",
-              score: response?.nota_manual == null ? "" : String(response.nota_manual),
-              feedback: response?.feedback ?? "",
               modelAnswer: question.resposta_modelo ?? "",
               imagePath,
               originalImagePath: imagePath,
@@ -173,7 +165,7 @@ export function StudentFeedbackEditor({
       ),
     );
     setDirty(false);
-  }, [discursiveQuestions, responses]);
+  }, [discursiveQuestions]);
 
   useEffect(() => {
     let cancelled = false;
@@ -202,8 +194,8 @@ export function StudentFeedbackEditor({
   }, [discursiveQuestions]);
 
   async function save(showToast = true) {
-    if (!assessment || !student || !assessment.turma_id) {
-      throw new Error("A avaliação precisa estar associada a uma turma.");
+    if (!assessment) {
+      throw new Error("Não foi possível carregar a avaliação.");
     }
 
     setSaving(true);
@@ -213,21 +205,10 @@ export function StudentFeedbackEditor({
 
       for (const question of discursiveQuestions) {
         const draft = drafts[question.id] ?? emptyDraft();
-        const scoreValue = parseScore(draft.score, question.numero, Number(question.valor));
 
         await updateQuestao(question, {
           resposta_modelo: draft.modelAnswer.trim() || null,
           resposta_modelo_imagem_path: draft.imagePath,
-        });
-
-        await saveResposta({
-          avaliacaoId: assessment.id,
-          turmaId: assessment.turma_id,
-          alunoId: student.id,
-          questaoId: question.id,
-          resposta: draft.answer.trim() || null,
-          notaManual: scoreValue,
-          feedback: draft.feedback.trim() || null,
         });
 
         if (
@@ -261,11 +242,7 @@ export function StudentFeedbackEditor({
         queryClient.invalidateQueries({
           queryKey: ["firebase-feedback-questions", assessmentId],
         }),
-        queryClient.invalidateQueries({
-          queryKey: ["firebase-feedback-responses", assessmentId, studentId],
-        }),
         queryClient.invalidateQueries({ queryKey: ["firebase-questoes", assessmentId] }),
-        queryClient.invalidateQueries({ queryKey: ["firebase-respostas", assessmentId] }),
       ]);
 
       setDirty(false);
@@ -273,7 +250,7 @@ export function StudentFeedbackEditor({
       if (imageCleanupFailed) {
         toast.warning("A devolutiva foi salva, mas uma imagem antiga não pôde ser removida.");
       } else if (showToast) {
-        toast.success("Devolutiva salva no Firebase.");
+        toast.success("Modelo de resposta salvo no Firebase.");
       }
     } finally {
       setSaving(false);
@@ -364,7 +341,7 @@ export function StudentFeedbackEditor({
       assessment,
       student,
       questions: finalQuestions as FeedbackQuestion[],
-      responses: mergeDrafts(responses, studentId, drafts),
+      responses,
       teacherEmail: userQuery.data.email,
     });
   }
@@ -467,8 +444,13 @@ export function StudentFeedbackEditor({
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
               {assessment.titulo}
-              {assessment.disciplina ? ` · ${assessment.disciplina}` : ""} · Nota atual:{" "}
-              {formatNumber(score)} de {formatNumber(Number(assessment.valor_total))}
+              {assessment.disciplina ? ` · ${assessment.disciplina}` : ""}
+              {showStudentScores && (
+                <>
+                  {" "}· Nota atual: {formatNumber(score)} de{" "}
+                  {formatNumber(Number(assessment.valor_total))}
+                </>
+              )}
             </p>
           </div>
 
@@ -531,9 +513,10 @@ export function StudentFeedbackEditor({
 
         <section className="rounded-lg border border-border bg-card">
           <div className="border-b border-border p-4">
-            <h2 className="font-semibold">Correção das questões discursivas</h2>
+            <h2 className="font-semibold">Modelo das questões discursivas</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              A resposta-modelo é comum à turma e pode conter texto, imagem ou ambos.
+              A resposta-modelo é comum à turma e pode conter texto, imagem ou ambos. A nota é
+              definida na aba Correção.
             </p>
           </div>
 
@@ -546,6 +529,7 @@ export function StudentFeedbackEditor({
               {discursiveQuestions.map((question) => {
                 const draft = drafts[question.id] ?? emptyDraft();
                 const imageUrl = imageUrls[question.id];
+                const manualScore = responsesByQuestion.get(question.id)?.nota_manual ?? null;
 
                 return (
                   <div key={question.id} className="space-y-5 p-4">
@@ -556,26 +540,15 @@ export function StudentFeedbackEditor({
                           Valor: {formatNumber(Number(question.valor))} ponto(s)
                         </p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Label htmlFor={`score-${question.id}`}>Nota</Label>
-                        <Input
-                          id={`score-${question.id}`}
-                          className="w-24"
-                          inputMode="decimal"
-                          value={draft.score}
-                          onChange={(event) =>
-                            updateDraft(
-                              question.id,
-                              { score: event.target.value },
-                              setDrafts,
-                              setDirty,
-                            )
-                          }
-                        />
-                        <span className="text-sm text-muted-foreground">
+                      {showStudentScores && (
+                        <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+                          <span className="text-muted-foreground">Nota do aluno: </span>
+                          <span className="font-semibold">
+                            {manualScore == null ? "Não informada" : formatNumber(manualScore)}
+                          </span>{" "}
                           / {formatNumber(Number(question.valor))}
-                        </span>
-                      </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-1.5">
@@ -634,43 +607,6 @@ export function StudentFeedbackEditor({
                       )}
                     </div>
 
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`answer-${question.id}`}>Resposta do aluno</Label>
-                      <textarea
-                        id={`answer-${question.id}`}
-                        rows={3}
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        value={draft.answer}
-                        onChange={(event) =>
-                          updateDraft(
-                            question.id,
-                            { answer: event.target.value },
-                            setDrafts,
-                            setDirty,
-                          )
-                        }
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`feedback-${question.id}`}>
-                        Comentário individual para o aluno
-                      </Label>
-                      <textarea
-                        id={`feedback-${question.id}`}
-                        rows={3}
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        value={draft.feedback}
-                        onChange={(event) =>
-                          updateDraft(
-                            question.id,
-                            { feedback: event.target.value },
-                            setDrafts,
-                            setDirty,
-                          )
-                        }
-                      />
-                    </div>
                   </div>
                 );
               })}
@@ -698,7 +634,7 @@ export function StudentFeedbackEditor({
               ) : (
                 <Save className="mr-2 h-4 w-4" />
               )}
-              Salvar devolutiva
+              Salvar modelo de resposta
             </Button>
             <Button
               type="button"
@@ -729,9 +665,6 @@ export function StudentFeedbackEditor({
 
 function emptyDraft(): DiscursiveDraft {
   return {
-    answer: "",
-    score: "",
-    feedback: "",
     modelAnswer: "",
     imagePath: null,
     originalImagePath: null,
@@ -749,39 +682,6 @@ function updateDraft(
     [questionId]: { ...(current[questionId] ?? emptyDraft()), ...patch },
   }));
   setDirty(true);
-}
-
-function mergeDrafts(
-  responses: FeedbackResponse[],
-  studentId: string,
-  drafts: Record<string, DiscursiveDraft>,
-): FeedbackResponse[] {
-  const byQuestion = new Map(responses.map((response) => [response.questao_id, response]));
-
-  for (const [questionId, draft] of Object.entries(drafts)) {
-    byQuestion.set(questionId, {
-      aluno_id: studentId,
-      questao_id: questionId,
-      resposta: draft.answer.trim() || null,
-      nota_manual: draft.score.trim() === "" ? null : Number(draft.score.replace(",", ".")),
-      feedback: draft.feedback.trim() || null,
-    });
-  }
-
-  return [...byQuestion.values()];
-}
-
-function parseScore(value: string, questionNumber: number, maximum: number): number | null {
-  if (!value.trim()) return null;
-  const parsed = Number(value.replace(",", "."));
-
-  if (!Number.isFinite(parsed) || parsed < 0 || parsed > maximum) {
-    throw new Error(
-      `A nota da questão ${questionNumber} deve ficar entre 0 e ${formatNumber(maximum)}.`,
-    );
-  }
-
-  return parsed;
 }
 
 function questionTypeLabel(type: FeedbackQuestion["tipo"]): string {
