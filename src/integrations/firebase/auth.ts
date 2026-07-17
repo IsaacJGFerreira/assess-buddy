@@ -1,7 +1,10 @@
 import {
   GoogleAuthProvider,
+  browserLocalPersistence,
   createUserWithEmailAndPassword,
+  indexedDBLocalPersistence,
   onAuthStateChanged,
+  setPersistence,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut as firebaseSignOut,
@@ -22,10 +25,7 @@ export interface AuthenticatedUser {
   source: "firebase";
 }
 
-export async function signInWithEmail(
-  email: string,
-  password: string,
-): Promise<UserCredential> {
+export async function signInWithEmail(email: string, password: string): Promise<UserCredential> {
   const credential = await signInWithEmailAndPassword(
     getFirebaseAuth(),
     normalizeEmail(email),
@@ -72,9 +72,19 @@ export async function signOut(): Promise<void> {
   await firebaseSignOut(getFirebaseAuth());
 }
 
-export function observeAuthState(
-  callback: (user: User | null) => void,
-): Unsubscribe {
+export async function configurePersistentAuth(): Promise<"indexeddb" | "localstorage"> {
+  const auth = getFirebaseAuth();
+
+  try {
+    await setPersistence(auth, indexedDBLocalPersistence);
+    return "indexeddb";
+  } catch {
+    await setPersistence(auth, browserLocalPersistence);
+    return "localstorage";
+  }
+}
+
+export function observeAuthState(callback: (user: User | null) => void): Unsubscribe {
   return onAuthStateChanged(getFirebaseAuth(), callback);
 }
 
@@ -156,8 +166,7 @@ function mapFirebaseUser(user: User): AuthenticatedUser {
 
 function isProfileReadAfterWriteError(error: unknown): boolean {
   return (
-    error instanceof Error &&
-    error.message === "O perfil foi salvo, mas não pôde ser carregado."
+    error instanceof Error && error.message === "O perfil foi salvo, mas não pôde ser carregado."
   );
 }
 

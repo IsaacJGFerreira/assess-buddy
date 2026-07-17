@@ -9,12 +9,35 @@ lerna-debug.log*
 
 node_modules
 dist
+dist-mobile
 dist-ssr
 .output
 .vinxi
 .tanstack/**
 .nitro
 *.local
+
+# Sobrescritas e segredos locais. O .env acompanhado contem apenas configuracao publica do cliente.
+.env.local
+.env.*.local
+.env.private
+.env.private.*
+.env.secrets
+.env.secrets.*
+
+# Android / assinatura / configuracao de maquina
+android/.gradle/
+android/local.properties
+android/**/build/
+android/captures/
+android/app/google-services.json
+*.jks
+*.keystore
+*.p12
+*.pfx
+keystore.properties
+android/signing.properties
+capacitor.config.local.*
 
 # Wrangler / Cloudflare
 .wrangler/

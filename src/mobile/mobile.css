@@ -1,0 +1,33 @@
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+html {
+  background: #fdfaf4;
+  overscroll-behavior: none;
+}
+
+body {
+  margin: 0;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+button,
+input {
+  touch-action: manipulation;
+}
+
+.mobile-safe-area {
+  min-height: 100dvh;
+  padding-top: max(env(safe-area-inset-top), 0px);
+  padding-right: max(env(safe-area-inset-right), 0px);
+  padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  padding-left: max(env(safe-area-inset-left), 0px);
+}
+
+.mobile-sticky-header {
+  top: max(env(safe-area-inset-top), 0px);
+}
