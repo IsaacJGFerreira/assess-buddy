@@ -65,9 +65,11 @@ export function ClassFeedbackPanel(_props: { turmaId: string }) {
 export function StudentFeedbackEditor({
   assessmentId,
   studentId,
+  embedded = false,
 }: {
   assessmentId: string;
   studentId: string;
+  embedded?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [drafts, setDrafts] = useState<Record<string, DiscursiveDraft>>({});
@@ -442,17 +444,27 @@ export function StudentFeedbackEditor({
   }
 
   return (
-    <div className="min-h-screen bg-muted/30 p-4 md:p-8">
+    <div
+      className={
+        embedded ? "bg-muted/30 p-4 md:p-6" : "min-h-screen bg-muted/30 p-4 md:p-8"
+      }
+    >
       <div className="mx-auto max-w-5xl space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <a
-              href={`/avaliacoes/${assessmentId}`}
-              className="inline-flex items-center text-sm text-muted-foreground hover:underline"
+            {!embedded && (
+              <a
+                href={`/avaliacoes/${assessmentId}`}
+                className="inline-flex items-center text-sm text-muted-foreground hover:underline"
+              >
+                <ArrowLeft className="mr-1 h-4 w-4" /> Voltar para a avaliação
+              </a>
+            )}
+            <h1
+              className={`${embedded ? "text-2xl" : "mt-2 text-3xl"} font-bold tracking-tight`}
             >
-              <ArrowLeft className="mr-1 h-4 w-4" /> Voltar para a avaliação
-            </a>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight">Devolutiva de {student.nome}</h1>
+              Devolutiva de {student.nome}
+            </h1>
             <p className="mt-1 text-sm text-muted-foreground">
               {assessment.titulo}
               {assessment.disciplina ? ` · ${assessment.disciplina}` : ""} · Nota atual:{" "}
