@@ -1,16 +1,24 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
   ChevronDown,
   Copy,
+  Download,
   ExternalLink,
+  FileImage,
   FileText,
+  LayoutGrid,
   Loader2,
   Plus,
+  Printer,
+  RectangleHorizontal,
+  RectangleVertical,
   Trash2,
+  TriangleAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -34,10 +42,13 @@ import {
   alternativas,
   calcularNotaAluno,
   corrigirQuestao,
+  createOrGetAnswerSheet,
   createQuestoes,
   deleteQuestao,
   duplicateQuestao,
   getAvaliacao,
+  getLatestAnswerSheetModel,
+  isAnswerSheetPersistenceUnavailable,
   listAlunosByTurma,
   listQuestoes,
   listRespostasByAvaliacao,
@@ -47,10 +58,27 @@ import {
   updateQuestao,
   type Aluno,
   type Avaliacao,
+  type IdentificacaoFolhaResposta,
   type Questao,
   type StatusAvaliacao,
   type TipoQuestao,
 } from "@/lib/domain";
+import { batchExportAnswerSheetsAsZip } from "@/lib/answer-sheet-batch";
+import { exportAnswerSheetAsPdf, exportAnswerSheetAsPng } from "@/lib/answer-sheet-export";
+import {
+  DEFAULT_ANSWER_SHEET_LAYOUT,
+  type AnswerSheetLayout,
+  type AnswerSheetOrientation,
+} from "@/lib/answer-sheet-layout";
+import {
+  clampIdentifierDigits,
+  DEFAULT_IDENTIFIER_DIGITS,
+  determineIdentifierDigits,
+  isStudentEligibleForPrefilledSheet,
+  MAX_IDENTIFIER_DIGITS,
+  MIN_IDENTIFIER_DIGITS,
+  type AnswerSheetIdentificationMode,
+} from "@/lib/answer-sheet-identification";
 
 export const Route = createFileRoute("/_authenticated/avaliacoes/$id")({
   component: AvaliacaoDetail,
@@ -593,214 +621,610 @@ function GabaritoTab({ avaliacaoId }: { avaliacaoId: string }) {
   );
 }
 
-function FolhaTab({
-  avaliacao,
-  questoes,
-}: {
-  avaliacao: Avaliacao;
-  questoes: Questao[];
-}) {
-  const alunosQuery = useQuery({
+function FolhaTab({ avaliacao, questoes }: { avaliacao: Avaliacao; questoes: Questao[] }) {
+  const queryClient = useQueryClient();
+  const [orientation, setOrientation] = useState<AnswerSheetOrientation>(
+    DEFAULT_ANSWER_SHEET_LAYOUT.orientation,
+  );
+  const [columns, setColumns] = useState(DEFAULT_ANSWER_SHEET_LAYOUT.columns);
+  const [rowsPerColumn, setRowsPerColumn] = useState(DEFAULT_ANSWER_SHEET_LAYOUT.rowsPerColumn);
+  const [identificationMode, setIdentificationMode] =
+    useState<AnswerSheetIdentificationMode>("none");
+  const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [blankIdentifierDigits, setBlankIdentifierDigits] = useState(DEFAULT_IDENTIFIER_DIGITS);
+  const [preview, setPreview] = useState<{
+    identification: IdentificacaoFolhaResposta | null;
+    identificationMode: AnswerSheetIdentificationMode;
+    identifierDigits: number;
+    aluno: Aluno | null;
+    eligibleStudents: Aluno[];
+    persistenceUnavailable?: boolean;
+  } | null>(null);
+
+  const savedModel = useQuery({
+    queryKey: ["firebase-modelo-folha", avaliacao.id],
+    queryFn: () => getLatestAnswerSheetModel(avaliacao.id),
+  });
+  const students = useQuery({
     queryKey: alunosKey(avaliacao.turma_id ?? ""),
     queryFn: () =>
-      avaliacao.turma_id
-        ? listAlunosByTurma(avaliacao.turma_id)
-        : Promise.resolve([]),
+      avaliacao.turma_id ? listAlunosByTurma(avaliacao.turma_id) : Promise.resolve([]),
     enabled: Boolean(avaliacao.turma_id),
   });
 
-  const [alunoId, setAlunoId] = useState("");
-  const [colunas, setColunas] = useState("2");
-  const [linhas, setLinhas] = useState("35");
-  const [orientacao, setOrientacao] =
-    useState<"portrait" | "landscape">("portrait");
-  const [previewOpen, setPreviewOpen] = useState(false);
-
-  const maxColumns = orientacao === "portrait" ? 4 : 6;
-  const maxRows = orientacao === "portrait" ? 35 : 25;
-
-  const columns = Math.min(
-    maxColumns,
-    Math.max(1, Number(colunas) || 2),
+  const derivedIdentifierDigits = determineIdentifierDigits(students.data ?? []);
+  const identifierDigits =
+    identificationMode === "blank"
+      ? clampIdentifierDigits(blankIdentifierDigits)
+      : derivedIdentifierDigits;
+  const eligibleStudents = (students.data ?? []).filter((student) =>
+    isStudentEligibleForPrefilledSheet(student, identifierDigits),
   );
-
-  const rowsPerColumn = Math.min(
-    maxRows,
-    Math.max(5, Number(linhas) || maxRows),
-  );
-
-  const aluno =
-    alunosQuery.data?.find((item) => item.id === alunoId) ?? null;
-
-  const layout = {
-    columns,
-    rowsPerColumn,
-    orientation: orientacao,
+  const effectiveStudentId = selectedStudentId || eligibleStudents[0]?.id || "";
+  const selectedStudent =
+    eligibleStudents.find((student) => student.id === effectiveStudentId) ?? null;
+  const maxColumns = orientation === "portrait" ? 4 : 6;
+  const maxRows = orientation === "portrait" ? 35 : 25;
+  const effectiveColumns = Math.min(maxColumns, Math.max(1, columns));
+  const effectiveRows = Math.min(maxRows, Math.max(5, rowsPerColumn));
+  const layout: AnswerSheetLayout = {
+    columns: effectiveColumns,
+    rowsPerColumn: effectiveRows,
+    orientation,
   };
 
-  if (previewOpen) {
+  const generateSheet = useMutation({
+    mutationFn: () => {
+      if (identificationMode === "prefilled" && !selectedStudent) {
+        throw new Error("Selecione um aluno com matrícula numérica para gerar esta folha.");
+      }
+      return createOrGetAnswerSheet({
+        avaliacao,
+        questoes,
+        alunoId: identificationMode === "prefilled" ? selectedStudent?.id : undefined,
+        layout,
+        identificationMode,
+        identifierDigits,
+      });
+    },
+    onSuccess: async (identification) => {
+      await queryClient.invalidateQueries({
+        queryKey: ["firebase-modelo-folha", avaliacao.id],
+      });
+      setPreview({
+        identification,
+        identificationMode,
+        identifierDigits,
+        aluno: identificationMode === "prefilled" ? selectedStudent : null,
+        eligibleStudents,
+      });
+      toast.success(`Folha ${identification.codigo} · versão ${identification.versao}.`);
+    },
+    onError: (error: Error) => {
+      if (isAnswerSheetPersistenceUnavailable(error)) {
+        setPreview({
+          identification: null,
+          identificationMode,
+          identifierDigits,
+          aluno: identificationMode === "prefilled" ? selectedStudent : null,
+          eligibleStudents,
+          persistenceUnavailable: true,
+        });
+        toast.warning("Prévia aberta. A persistência da folha ainda não está disponível.");
+        return;
+      }
+      toast.error(error.message || "Não foi possível salvar a folha.");
+    },
+  });
+
+  function changeOrientation(value: AnswerSheetOrientation) {
+    setOrientation(value);
+    if (value === "portrait" && columns > 4) setColumns(4);
+    if (value === "landscape" && rowsPerColumn > 25) setRowsPerColumn(25);
+  }
+
+  function applyCompactDefault() {
+    setOrientation(DEFAULT_ANSWER_SHEET_LAYOUT.orientation);
+    setColumns(DEFAULT_ANSWER_SHEET_LAYOUT.columns);
+    setRowsPerColumn(DEFAULT_ANSWER_SHEET_LAYOUT.rowsPerColumn);
+  }
+
+  if (preview) {
     return (
-      <div className="overflow-hidden rounded-lg border border-border bg-muted/30">
-        <div className="no-print flex flex-wrap items-center justify-between gap-3 border-b border-border bg-card p-4">
-          <div>
-            <h2 className="font-semibold">
-              {aluno ? `Folha de ${aluno.nome}` : "Folha genérica"}
-            </h2>
-
-            <p className="mt-1 text-xs text-muted-foreground">
-              {columns} coluna{columns > 1 ? "s" : ""} · até{" "}
-              {rowsPerColumn} itens por coluna ·{" "}
-              {orientacao === "portrait" ? "vertical" : "horizontal"}
-            </p>
-          </div>
-
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setPreviewOpen(false)}
-            >
-              Voltar à configuração
-            </Button>
-
-            <Button
-              type="button"
-              onClick={() => window.print()}
-            >
-              Imprimir
-            </Button>
-          </div>
-        </div>
-
-        <div className="answer-sheet-inline-viewport max-h-[78vh] max-w-full overflow-auto">
-          <div className="answer-sheet-export-root">
-            <AnswerSheet
-              avaliacao={avaliacao}
-              questoes={questoes}
-              aluno={aluno}
-              layout={layout}
-            />
-          </div>
-        </div>
-      </div>
+      <EmbeddedAnswerSheetPreview
+        avaliacao={avaliacao}
+        questoes={questoes}
+        layout={layout}
+        identification={preview.identification}
+        identificationMode={preview.identificationMode}
+        identifierDigits={preview.identifierDigits}
+        aluno={preview.aluno}
+        eligibleStudents={preview.eligibleStudents}
+        persistenceUnavailable={preview.persistenceUnavailable}
+        onBack={() => setPreview(null)}
+      />
     );
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-      <div className="rounded-lg border border-border bg-card p-6">
-        <FileText className="h-10 w-10 text-primary" />
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+      <section className="min-w-0 overflow-hidden rounded-lg border border-border bg-muted/30">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-card px-4 py-3">
+          <div>
+            <h3 className="flex items-center gap-2 font-semibold">
+              <LayoutGrid className="h-4 w-4" /> Prévia da folha
+            </h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              O bloco compacto acompanha automaticamente os controles ao lado.
+            </p>
+          </div>
+          <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+            {effectiveColumns} × {effectiveRows} · até {effectiveColumns * effectiveRows} itens
+          </span>
+        </div>
 
-        <h2 className="mt-4 text-xl font-semibold">
-          Folha de respostas
-        </h2>
-
-        <p className="mt-2 text-sm text-muted-foreground">
-          Visualize e imprima a folha sem sair desta aba.
-        </p>
-
-        <Button
-          type="button"
-          className="mt-5"
-          disabled={questoes.length === 0}
-          onClick={() => setPreviewOpen(true)}
-        >
-          Abrir prévia da folha
-        </Button>
-
-        {questoes.length === 0 && (
-          <p className="mt-2 text-xs text-muted-foreground">
-            Cadastre ao menos uma questão antes de abrir a prévia.
-          </p>
+        {questoes.length === 0 ? (
+          <div className="p-10 text-center text-sm text-muted-foreground">
+            Cadastre ao menos uma questão para visualizar a folha.
+          </div>
+        ) : (
+          <div className="answer-sheet-inline-viewport max-h-[78vh] max-w-full overflow-auto">
+            <div className="answer-sheet-export-root">
+              <AnswerSheet
+                avaliacao={avaliacao}
+                questoes={questoes}
+                aluno={identificationMode === "prefilled" ? selectedStudent : null}
+                layout={layout}
+                identificationMode={identificationMode}
+                identifierDigits={identifierDigits}
+              />
+            </div>
+          </div>
         )}
+      </section>
+
+      <aside className="space-y-4 xl:sticky xl:top-4">
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-semibold">Configuração</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Escolha a identificação e o formato.
+              </p>
+            </div>
+            <Button type="button" size="sm" variant="ghost" onClick={applyCompactDefault}>
+              Usar padrão
+            </Button>
+          </div>
+
+          <div className="mt-4 space-y-4">
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium">Identificação</legend>
+              <div className="grid gap-2">
+                {(
+                  [
+                    ["none", "Sem identificação", "Somente os itens e as bolhas."],
+                    ["blank", "Matrícula para preencher", "O aluno escreve e marca a matrícula."],
+                    [
+                      "prefilled",
+                      "Matrícula já preenchida",
+                      "Nome, dígitos e bolhas vêm preenchidos.",
+                    ],
+                  ] as const
+                ).map(([value, label, description]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setIdentificationMode(value)}
+                    className={`rounded-md border px-3 py-2 text-left transition ${
+                      identificationMode === value
+                        ? "border-primary bg-primary/10"
+                        : "border-border hover:bg-muted/50"
+                    }`}
+                    aria-pressed={identificationMode === value}
+                  >
+                    <span className="block text-sm font-medium">{label}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {description}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+
+            {identificationMode === "blank" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="sheet-blank-digits">Quantidade de algarismos da matrícula</Label>
+                <Input
+                  id="sheet-blank-digits"
+                  type="number"
+                  min={MIN_IDENTIFIER_DIGITS}
+                  max={MAX_IDENTIFIER_DIGITS}
+                  value={blankIdentifierDigits}
+                  onChange={(event) =>
+                    setBlankIdentifierDigits(clampIdentifierDigits(Number(event.target.value)))
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Entre {MIN_IDENTIFIER_DIGITS} e {MAX_IDENTIFIER_DIGITS} dígitos.
+                </p>
+              </div>
+            )}
+
+            {identificationMode === "prefilled" && (
+              <div className="space-y-1.5">
+                <Label>Aluno exibido na prévia</Label>
+                <Select value={effectiveStudentId} onValueChange={setSelectedStudentId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o aluno" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {eligibleStudents.map((student) => (
+                      <SelectItem key={student.id} value={student.id}>
+                        {student.nome} · {student.matricula}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {students.isPending ? (
+                  <p className="text-xs text-muted-foreground">Carregando alunos…</p>
+                ) : eligibleStudents.length === 0 ? (
+                  <p className="text-xs font-medium text-amber-700">
+                    Nenhum aluno possui matrícula numérica compatível.
+                  </p>
+                ) : eligibleStudents.length < (students.data?.length ?? 0) ? (
+                  <p className="text-xs text-amber-700">
+                    Matrículas ausentes ou não numéricas serão ignoradas no pacote.
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    A exportação em lote incluirá {eligibleStudents.length} aluno
+                    {eligibleStudents.length === 1 ? "" : "s"}.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium">Distribuição</legend>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => changeOrientation("portrait")}
+                  className={`flex flex-col items-center gap-2 rounded-md border px-3 py-3 text-sm transition ${
+                    orientation === "portrait"
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border hover:bg-muted/50"
+                  }`}
+                  aria-pressed={orientation === "portrait"}
+                >
+                  <RectangleVertical className="h-6 w-6" /> Vertical
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changeOrientation("landscape")}
+                  className={`flex flex-col items-center gap-2 rounded-md border px-3 py-3 text-sm transition ${
+                    orientation === "landscape"
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border hover:bg-muted/50"
+                  }`}
+                  aria-pressed={orientation === "landscape"}
+                >
+                  <RectangleHorizontal className="h-6 w-6" /> Horizontal
+                </button>
+              </div>
+            </fieldset>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Colunas</Label>
+                <Select
+                  value={String(effectiveColumns)}
+                  onValueChange={(value) => setColumns(Number(value))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: maxColumns }, (_, index) => index + 1).map((value) => (
+                      <SelectItem key={value} value={String(value)}>
+                        {value}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="sheet-rows">Itens/coluna</Label>
+                <Input
+                  id="sheet-rows"
+                  type="number"
+                  min={5}
+                  max={maxRows}
+                  value={effectiveRows}
+                  onChange={(event) =>
+                    setRowsPerColumn(
+                      Math.min(maxRows, Math.max(5, Number(event.target.value) || 5)),
+                    )
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="text-sm font-medium">
+            {savedModel.isPending
+              ? "Carregando modelo salvo…"
+              : savedModel.data
+                ? `Próxima versão: ${savedModel.data.versao + 1}`
+                : "Primeira versão da folha"}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            A folha será salva no Firebase no menor tamanho necessário.
+          </p>
+          <Button
+            type="button"
+            className="mt-4 w-full"
+            onClick={() => generateSheet.mutate()}
+            disabled={
+              generateSheet.isPending ||
+              savedModel.isPending ||
+              questoes.length === 0 ||
+              (identificationMode === "prefilled" && !selectedStudent)
+            }
+          >
+            {generateSheet.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <FileText className="mr-2 h-4 w-4" />
+            )}
+            Salvar e abrir folha
+          </Button>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+type AnswerSheetExportState = "individual-pdf" | "individual-png" | "batch-pdf" | "batch-png";
+
+function EmbeddedAnswerSheetPreview({
+  avaliacao,
+  questoes,
+  aluno,
+  layout,
+  identification,
+  identificationMode,
+  identifierDigits,
+  eligibleStudents,
+  persistenceUnavailable = false,
+  onBack,
+}: {
+  avaliacao: Avaliacao;
+  questoes: Questao[];
+  aluno?: Aluno | null;
+  layout: AnswerSheetLayout;
+  identification: IdentificacaoFolhaResposta | null;
+  identificationMode: AnswerSheetIdentificationMode;
+  identifierDigits: number;
+  eligibleStudents: Aluno[];
+  persistenceUnavailable?: boolean;
+  onBack: () => void;
+}) {
+  const exportRootRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState<AnswerSheetExportState | null>(null);
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null);
+  const isPrefilled = identificationMode === "prefilled";
+  const busy = exporting !== null;
+
+  async function exportIndividual(format: "pdf" | "png") {
+    if (!exportRootRef.current || !identification) {
+      toast.warning("Salve a folha antes de exportar.");
+      return;
+    }
+    setExporting(`individual-${format}`);
+    try {
+      const title = `${avaliacao.titulo}-${aluno?.nome ?? "folha"}-${identification.codigo}`;
+      if (format === "pdf") await exportAnswerSheetAsPdf(exportRootRef.current, title);
+      else await exportAnswerSheetAsPng(exportRootRef.current, title);
+      toast.success(format === "pdf" ? "PDF gerado com sucesso." : "PNG gerado com sucesso.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Não foi possível gerar o arquivo.");
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  async function exportBatch(format: "pdf" | "png") {
+    if (!identification || eligibleStudents.length === 0) {
+      toast.warning("Nenhum aluno com matrícula numérica está disponível.");
+      return;
+    }
+    setExporting(`batch-${format}`);
+    setBatchProgress({ done: 0, total: eligibleStudents.length });
+    try {
+      const items: { fileName: string; element: ReactElement }[] = [];
+      for (const student of eligibleStudents) {
+        const sheet = await createOrGetAnswerSheet({
+          avaliacao,
+          questoes,
+          alunoId: student.id,
+          layout,
+          identificationMode: "prefilled",
+          identifierDigits,
+        });
+        items.push({
+          fileName: `${avaliacao.titulo}-${student.nome}-${student.matricula}-${sheet.codigo}`,
+          element: (
+            <AnswerSheet
+              avaliacao={avaliacao}
+              questoes={questoes}
+              aluno={student}
+              layout={layout}
+              identificationMode="prefilled"
+              identifierDigits={identifierDigits}
+              identification={{
+                code: sheet.codigo,
+                version: sheet.versao,
+                qrPayload: sheet.qrPayload,
+              }}
+            />
+          ),
+        });
+      }
+      await batchExportAnswerSheetsAsZip({
+        format,
+        items,
+        zipBaseName: `${avaliacao.titulo}-${format}`,
+        onProgress: (done, total) => setBatchProgress({ done, total }),
+      });
+      toast.success(`Pacote com ${items.length} folhas gerado com sucesso.`);
+    } catch (error) {
+      console.error(error);
+      toast.error("Não foi possível gerar o pacote da turma.");
+    } finally {
+      setExporting(null);
+      setBatchProgress(null);
+    }
+  }
+
+  function printAnswerSheet() {
+    if (!identification) {
+      toast.warning("Salve a folha antes de imprimir.");
+      return;
+    }
+    document.body.classList.add("printing-answer-sheet");
+    try {
+      window.print();
+    } finally {
+      document.body.classList.remove("printing-answer-sheet");
+    }
+  }
+
+  return (
+    <div className="answer-sheet-inline-preview overflow-hidden rounded-lg border border-border bg-muted/30">
+      <style>{`@media print { @page { size: auto; margin: 0; } }`}</style>
+      <div className="no-print flex flex-wrap items-center justify-between gap-3 border-b border-border bg-card p-4">
+        <div className="flex items-center gap-3">
+          <Button type="button" variant="outline" size="sm" onClick={onBack} disabled={busy}>
+            <ArrowLeft className="mr-2 h-4 w-4" /> Voltar
+          </Button>
+          <div>
+            <div className="font-medium">{aluno ? `Folha de ${aluno.nome}` : "Folha genérica"}</div>
+            <div className="text-xs text-muted-foreground">
+              {layout.columns} coluna{layout.columns === 1 ? "" : "s"} · formato compacto
+            </div>
+            {identification && (
+              <div className="mt-1 font-mono text-xs text-muted-foreground">
+                {identification.codigo} · versão {identification.versao}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void exportIndividual("png")}
+            disabled={busy || !identification}
+          >
+            {exporting === "individual-png" ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <FileImage className="mr-2 h-4 w-4" />
+            )}
+            {isPrefilled ? "PNG deste aluno" : "Baixar PNG"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void exportIndividual("pdf")}
+            disabled={busy || !identification}
+          >
+            {exporting === "individual-pdf" ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="mr-2 h-4 w-4" />
+            )}
+            {isPrefilled ? "PDF deste aluno" : "Baixar PDF"}
+          </Button>
+          {isPrefilled && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void exportBatch("png")}
+                disabled={busy || !identification || eligibleStudents.length === 0}
+              >
+                {exporting === "batch-png" ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <FileImage className="mr-2 h-4 w-4" />
+                )}
+                PNGs da turma (.zip)
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void exportBatch("pdf")}
+                disabled={busy || !identification || eligibleStudents.length === 0}
+              >
+                {exporting === "batch-pdf" ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                PDFs da turma (.zip)
+              </Button>
+            </>
+          )}
+          <Button type="button" onClick={printAnswerSheet} disabled={busy || !identification}>
+            <Printer className="mr-2 h-4 w-4" /> Imprimir
+          </Button>
+        </div>
       </div>
 
-      <div className="space-y-4 rounded-lg border border-border bg-card p-4">
-        <h3 className="font-semibold">Configuração rápida</h3>
-
-        <div className="space-y-1.5">
-          <Label>Orientação</Label>
-
-          <Select
-            value={orientacao}
-            onValueChange={(value) => {
-              const next = value as "portrait" | "landscape";
-              setOrientacao(next);
-
-              if (next === "landscape" && Number(linhas) > 25) {
-                setLinhas("25");
-              }
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-
-            <SelectContent>
-              <SelectItem value="portrait">Vertical</SelectItem>
-              <SelectItem value="landscape">Horizontal</SelectItem>
-            </SelectContent>
-          </Select>
+      {batchProgress && (
+        <div className="no-print border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
+          Gerando pacote… {batchProgress.done}/{batchProgress.total} alunos
         </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label>Colunas</Label>
-
-            <Input
-              type="number"
-              min={1}
-              max={maxColumns}
-              value={colunas}
-              onChange={(event) => setColunas(event.target.value)}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Itens/coluna</Label>
-
-            <Input
-              type="number"
-              min={5}
-              max={maxRows}
-              value={linhas}
-              onChange={(event) => setLinhas(event.target.value)}
-            />
+      )}
+      {persistenceUnavailable && (
+        <div className="no-print flex gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <div className="font-medium">Prévia temporária.</div>
+            <p className="mt-0.5 text-amber-800">
+              A persistência não está disponível; impressão e downloads permanecem bloqueados.
+            </p>
           </div>
         </div>
+      )}
 
-        {avaliacao.turma_id && (
-          <div className="space-y-1.5">
-            <Label>Aluno pré-preenchido</Label>
-
-            <Select
-              value={alunoId || "generic"}
-              onValueChange={(value) =>
-                setAlunoId(value === "generic" ? "" : value)
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-
-              <SelectContent>
-                <SelectItem value="generic">
-                  Folha genérica
-                </SelectItem>
-
-                {alunosQuery.data
-                  ?.filter((item) =>
-                    /^[0-9]+$/.test(item.matricula ?? "")
-                  )
-                  .map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.nome} · {item.matricula}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
+      <div className="answer-sheet-inline-viewport max-w-full overflow-x-auto">
+        <div ref={exportRootRef} className="answer-sheet-export-root">
+          <AnswerSheet
+            avaliacao={avaliacao}
+            questoes={questoes}
+            aluno={aluno}
+            layout={layout}
+            identificationMode={identificationMode}
+            identifierDigits={identifierDigits}
+            identification={
+              identification
+                ? {
+                    code: identification.codigo,
+                    version: identification.versao,
+                    qrPayload: identification.qrPayload,
+                  }
+                : undefined
+            }
+          />
+        </div>
       </div>
     </div>
   );
