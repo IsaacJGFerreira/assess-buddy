@@ -20,3 +20,27 @@ test("does not render raw HTML from a comment", () => {
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /Texto seguro/);
 });
+
+test("preserves line breaks and renders the safe formatting controls", () => {
+  const html = renderRichCommentToHtml(`Linha 1
+Linha 2
+
+:feedbackunderline[texto sublinhado]
+
+:feedbackcolorred[texto vermelho]
+
+:::feedbackaligncenter
+**Texto centralizado**
+:::
+
+:::feedbackimagesmallright
+![Gráfico](https://example.com/grafico.png)
+:::`);
+
+  assert.match(html, /Linha 1<br\/>\nLinha 2/);
+  assert.match(html, /class="feedback-underline"/);
+  assert.match(html, /class="feedback-color-red"/);
+  assert.match(html, /class="feedback-align-center"/);
+  assert.match(html, /<strong>Texto centralizado<\/strong>/);
+  assert.match(html, /class="feedback-image-size-small feedback-image-align-right"/);
+});

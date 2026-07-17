@@ -1,6 +1,10 @@
 import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
+import remarkBreaks from "remark-breaks";
+import remarkDirective from "remark-directive";
 import remarkMath from "remark-math";
+
+import { remarkFeedbackDirectives } from "@/lib/rich-comment-directives";
 
 export function RichComment({
   value,
@@ -12,7 +16,7 @@ export function RichComment({
   return (
     <div className={`feedback-rich-comment ${className}`.trim()}>
       <ReactMarkdown
-        remarkPlugins={[remarkMath]}
+        remarkPlugins={[remarkMath, remarkDirective, remarkBreaks, remarkFeedbackDirectives]}
         rehypePlugins={[rehypeKatex]}
         components={{
           a: ({ href, children }) => (

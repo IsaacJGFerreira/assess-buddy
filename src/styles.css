@@ -262,6 +262,73 @@
   padding-left: 0.9rem;
 }
 
+.feedback-rich-comment .feedback-align-left {
+  text-align: left;
+}
+
+.feedback-rich-comment .feedback-align-center {
+  text-align: center;
+}
+
+.feedback-rich-comment .feedback-align-right {
+  text-align: right;
+}
+
+.feedback-rich-comment .feedback-underline {
+  text-decoration: underline;
+}
+
+.feedback-rich-comment .feedback-color-black {
+  color: #111111;
+}
+
+.feedback-rich-comment .feedback-color-red {
+  color: #b91c1c;
+}
+
+.feedback-rich-comment .feedback-color-blue {
+  color: #1d4ed8;
+}
+
+.feedback-rich-comment .feedback-color-green {
+  color: #15803d;
+}
+
+.feedback-rich-comment .feedback-color-orange {
+  color: #c2410c;
+}
+
+.feedback-rich-comment .feedback-color-purple {
+  color: #7e22ce;
+}
+
+.feedback-rich-comment .feedback-image-size-small img {
+  width: 35%;
+}
+
+.feedback-rich-comment .feedback-image-size-medium img {
+  width: 60%;
+}
+
+.feedback-rich-comment .feedback-image-size-large img {
+  width: 100%;
+}
+
+.feedback-rich-comment .feedback-image-align-left img {
+  margin-right: auto;
+  margin-left: 0;
+}
+
+.feedback-rich-comment .feedback-image-align-center img {
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.feedback-rich-comment .feedback-image-align-right img {
+  margin-right: 0;
+  margin-left: auto;
+}
+
 .feedback-rich-comment .katex-display {
   max-width: 100%;
   overflow-x: auto;
