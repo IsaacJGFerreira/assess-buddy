@@ -2,8 +2,8 @@
 
 O aplicativo Android instalável vive no mesmo repositório da aplicação web. Ele usa o identificador
 `br.com.fazendofisica.folha`, o nome **Folha** e o mesmo Firebase Authentication, Data Connect e
-Firebase Storage já usados pela web. A segunda etapa da Missão Android acrescenta paridade para as
-funções principais sem transformar as páginas desktop em um WebView reduzido.
+Firebase Storage já usados pela web. A terceira etapa da Missão Android acrescenta integrações que
+dependem do aparelho sem transformar as páginas desktop em um WebView reduzido.
 
 ## Arquitetura
 
@@ -33,7 +33,7 @@ na versão web.
 
 ## Funções disponíveis no Android
 
-- autenticação por e-mail e senha e persistência da sessão;
+- autenticação por e-mail/senha e Google nativo, com persistência da sessão JavaScript;
 - painel com atalhos, totais e atividade recente;
 - criação, edição e exclusão de turmas e alunos, inclusive importação CSV comum;
 - criação, edição e exclusão de avaliações;
@@ -41,8 +41,12 @@ na versão web.
 - reordenação, duplicação, anulação e exclusão de questões;
 - configuração da matrícula e do layout da folha de respostas;
 - visualização da folha, modelos salvos e histórico de versões;
-- upload comum de JPG, PNG e PDF, correção manual e notas discursivas;
-- relatórios, configuração de comentários e geração de devolutivas em PDF;
+- captura pela câmera, Photo Picker da galeria e seleção de JPG, PNG e PDF;
+- rotação, recorte, compressão segura, envio ao Storage e leitura OMR com revisão;
+- recuperação de uma captura pendente após troca de aplicativo ou encerramento pelo Android;
+- visualização, salvamento e compartilhamento nativos de PDFs e abertura de arquivos;
+- correção manual, notas discursivas, relatórios e comentários;
+- geração, abertura, salvamento, compartilhamento e envio Gmail das devolutivas em PDF;
 - exclusões em cascata por meio dos mesmos serviços compartilhados;
 - atualização dos mesmos registros entre Android e web.
 
@@ -83,14 +87,43 @@ token privado ou credencial de servidor.
 O Data Connect gerado já aponta para o serviço `assess-buddy`, conector `app`, na região
 `southamerica-east1`. Não crie outro conector ou banco para o Android.
 
-O `google-services.json` não é necessário nesta etapa: Firebase Authentication, Data Connect e
-Storage usam o SDK JavaScript compartilhado. Se uma etapa futura adotar um plugin Firebase nativo,
-baixe esse arquivo no Firebase Console, coloque-o manualmente em `android/app/google-services.json`
-e mantenha-o fora do Git.
+### Situação verificada no repositório
 
-No Firebase Console, confirme que o provedor **E-mail/senha** está habilitado. Se App Check estiver
-em modo obrigatório, a aplicação precisa inicializar o App Check para o SDK JavaScript usado dentro
-do Capacitor; registrar somente o pacote Android não autoriza essas requisições.
+O pacote Android usado pelo projeto é exatamente `br.com.fazendofisica.folha`. O repositório não
+contém `android/app/google-services.json`, valores SHA nem outra prova de que esse pacote já esteja
+registrado no projeto Firebase. Essa ausência é intencional para não versionar configuração local,
+mas impede confirmar ou ativar o login Google nativo somente pelo código-fonte.
+
+O login por e-mail/senha e os serviços web compartilhados continuam funcionando com as variáveis
+`VITE_FIREBASE_*`. O botão Google no Android usa o plugin nativo com `skipNativeAuth: true` e entrega
+o ID token à sessão do Firebase JavaScript. Assim, o Data Connect e o Storage continuam vendo a
+mesma sessão, e a versão web preserva seu fluxo atual com popup.
+
+### Configuração manual obrigatória para Google no Android
+
+Use somente valores obtidos nos consoles e na assinatura real; não crie SHA ou Client ID à mão.
+
+1. No Firebase Console do mesmo projeto indicado por `VITE_FIREBASE_PROJECT_ID`, abra
+   **Configurações do projeto → Seus aplicativos**.
+2. Localize o aplicativo Android com pacote `br.com.fazendofisica.folha`. Se ele não existir,
+   registre um novo aplicativo usando exatamente esse pacote.
+3. Obtenha os fingerprints reais do build de desenvolvimento com `gradlew signingReport` dentro de
+   `android/` (`.\gradlew.bat signingReport` no Windows). Copie do bloco `debug` os valores SHA-1 e
+   SHA-256 e cadastre-os no aplicativo Android do Firebase. Para release, cadastre depois somente
+   os valores produzidos pelo keystore real de publicação.
+4. Em **Authentication → Método de login**, habilite Google e confirme o e-mail de suporte. Preserve
+   também E-mail/senha.
+5. Baixe novamente o `google-services.json` desse aplicativo e coloque-o localmente em
+   `android/app/google-services.json`. O arquivo é ignorado pelo Git e não deve entrar no PR.
+6. No Google Cloud associado ao Firebase, habilite a Gmail API. Configure a tela de consentimento e
+   o escopo `https://www.googleapis.com/auth/gmail.send`; enquanto o app estiver em teste, inclua as
+   contas de teste autorizadas.
+7. Execute `npm run mobile:sync` e gere um novo APK debug. Não informe manualmente nenhum Client ID:
+   o plugin lê o cliente gerado a partir do arquivo oficial.
+
+Se App Check estiver em modo obrigatório, a aplicação ainda precisa inicializar App Check para o
+SDK JavaScript usado dentro do Capacitor; registrar somente o pacote Android não autoriza essas
+requisições.
 
 ## Comandos
 
@@ -156,6 +189,22 @@ Para a validação manual de responsividade, use emuladores ou perfis redimensio
 avaliação; abra um formulário e o teclado, role a folha de respostas e confirme que nenhum botão,
 diálogo ou campo fica inacessível.
 
+## Checklist em aparelho Android real
+
+- [ ] Fazer uma foto da folha e confirmar que o app da câmera retorna ao Folha com a imagem correta.
+- [ ] Selecionar uma imagem pelo Photo Picker sem conceder acesso amplo à biblioteca.
+- [ ] Selecionar JPG, PNG e um PDF com mais de uma página pelo provedor de arquivos.
+- [ ] Girar, recortar, comprimir, enviar, executar OMR e revisar marcações duvidosas.
+- [ ] Abrir câmera/galeria, trocar de aplicativo e voltar sem perder a seleção.
+- [ ] Repetir com o processo do Folha encerrado pelo Android e conferir a recuperação da captura.
+- [ ] Desligar a internet antes do upload; conferir o bloqueio e retomar depois da reconexão.
+- [ ] Abrir, salvar e compartilhar a folha de respostas em PDF.
+- [ ] Abrir, salvar e compartilhar uma devolutiva que contenha imagem.
+- [ ] Entrar com Google, cancelar uma tentativa e concluir outra com retorno seguro ao Folha.
+- [ ] Autorizar `gmail.send` e enviar uma devolutiva para uma conta de teste.
+- [ ] Usar o botão voltar dentro das telas e confirmar que, na raiz, o app é minimizado.
+- [ ] Confirmar na web a digitalização, a correção e os dados enviados pelo Android.
+
 ## Segurança e arquivos locais
 
 O `.gitignore` protege sobrescritas locais de ambiente, `local.properties`, `google-services.json`,
@@ -171,12 +220,9 @@ pela assinatura, nunca no repositório.
 
 ## Limites desta etapa
 
-- Login e cadastro móveis cobrem e-mail/senha; o login Google da web não foi levado para o shell
-  Android neste PR.
-- Upload comum pelo seletor de arquivos continua disponível. Câmera, galeria e compartilhamento
-  nativo permanecem para os próximos PRs.
-- A devolutiva pode ser configurada, gerada e baixada. Envio pelo Gmail nativo aguarda a futura
-  integração Google Android.
+- O build e os testes automatizados não comprovam câmera, provedores de documentos, apps de PDF,
+  compartilhamento ou retorno de autenticação de um fabricante específico; use o checklist real.
+- O login Google e o envio Gmail só ficam operacionais depois da configuração manual oficial acima.
 - A comprovação ao vivo exige variáveis Firebase válidas e uma conta de teste; elas não são
   versionadas.
 - Ícones e splash atuais são os iniciais do Capacitor. A identidade final e a assinatura de release

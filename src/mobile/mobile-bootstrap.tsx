@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 
-import { configurePersistentAuth } from "@/integrations/firebase/auth";
+import {
+  configurePersistentAuth,
+  recoverPendingNativeGoogleSignIn,
+} from "@/integrations/firebase/auth";
 
 import { MobileApp } from "./mobile-app";
 import { initializeMobilePlatform } from "./platform";
@@ -16,13 +19,18 @@ export function MobileBootstrap() {
     let cleanupPlatform: () => void = () => undefined;
 
     void Promise.all([configurePersistentAuth(), initializeMobilePlatform()])
-      .then(([, cleanup]) => {
+      .then(async ([, cleanup]) => {
         if (disposed) {
           cleanup();
           return;
         }
 
         cleanupPlatform = cleanup;
+        await recoverPendingNativeGoogleSignIn();
+        if (disposed) {
+          cleanupPlatform();
+          return;
+        }
         setState({ status: "ready" });
       })
       .catch((error: unknown) => {

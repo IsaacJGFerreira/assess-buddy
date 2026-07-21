@@ -36,6 +36,9 @@ export function MobileReport({
   if (!classId) {
     return <MobileEmpty>Associe uma turma à avaliação para gerar o relatório.</MobileEmpty>;
   }
+  if (!connected && (studentsQuery.data === undefined || responsesQuery.data === undefined)) {
+    return <MobileError error="Reconecte-se para calcular o relatório." />;
+  }
   if (studentsQuery.isPending || responsesQuery.isPending) {
     return <MobileLoading label="Calculando relatório…" />;
   }

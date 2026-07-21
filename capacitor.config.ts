@@ -17,6 +17,10 @@ const config: CapacitorConfig = {
       overlaysWebView: true,
       style: "DARK",
     },
+    FirebaseAuthentication: {
+      skipNativeAuth: true,
+      providers: ["google.com"],
+    },
   },
 };
 

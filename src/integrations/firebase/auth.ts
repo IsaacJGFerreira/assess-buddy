@@ -1,3 +1,5 @@
+import type { SignInResult } from "@capacitor-firebase/authentication";
+import { Capacitor } from "@capacitor/core";
 import {
   GoogleAuthProvider,
   browserLocalPersistence,
@@ -6,6 +8,7 @@ import {
   onAuthStateChanged,
   setPersistence,
   signInWithEmailAndPassword,
+  signInWithCredential,
   signInWithPopup,
   signOut as firebaseSignOut,
   updateProfile,
@@ -57,6 +60,15 @@ export async function signUpWithEmail(
 }
 
 export async function signInWithGoogle(): Promise<UserCredential> {
+  if (Capacitor.isNativePlatform()) {
+    const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
+    const result = await FirebaseAuthentication.signInWithGoogle({
+      useCredentialManager: true,
+      skipNativeAuth: true,
+    });
+    return completeNativeGoogleSignIn(result);
+  }
+
   const provider = new GoogleAuthProvider();
   provider.addScope("openid");
   provider.addScope("email");
@@ -69,7 +81,27 @@ export async function signInWithGoogle(): Promise<UserCredential> {
 }
 
 export async function signOut(): Promise<void> {
+  if (Capacitor.isNativePlatform()) {
+    const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
+    await FirebaseAuthentication.signOut().catch((error) => {
+      console.warn("Não foi possível limpar a sessão Google nativa.", error);
+    });
+  }
   await firebaseSignOut(getFirebaseAuth());
+}
+
+export async function recoverPendingNativeGoogleSignIn(): Promise<UserCredential | null> {
+  if (!Capacitor.isNativePlatform()) return null;
+
+  try {
+    const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
+    const result = await FirebaseAuthentication.getPendingAuthResult();
+    if (!result.credential?.idToken) return null;
+    return completeNativeGoogleSignIn(result);
+  } catch {
+    // Ausência de resultado pendente é o estado normal na maioria das inicializações.
+    return null;
+  }
 }
 
 export async function configurePersistentAuth(): Promise<"indexeddb" | "localstorage"> {
@@ -151,7 +183,36 @@ export function authErrorMessage(error: unknown): string {
     return "Não foi possível acessar o Firebase. Verifique sua conexão.";
   }
 
+  const normalizedMessage = error.message.toLowerCase();
+  if (normalizedMessage.includes("cancel") || normalizedMessage.includes("canceled")) {
+    return "O login com Google foi cancelado.";
+  }
+  if (
+    normalizedMessage.includes("google-services") ||
+    normalizedMessage.includes("default_web_client_id") ||
+    normalizedMessage.includes("will_be_overridden") ||
+    normalizedMessage.includes("server client id") ||
+    normalizedMessage.includes("developer_error") ||
+    normalizedMessage.includes("10:")
+  ) {
+    return "O login Google do Android ainda precisa da configuração Firebase e dos SHA reais deste aplicativo.";
+  }
+
   return error.message;
+}
+
+async function completeNativeGoogleSignIn(result: SignInResult): Promise<UserCredential> {
+  const idToken = result.credential?.idToken;
+  if (!idToken) {
+    throw new Error(
+      "O Google não devolveu um ID token. Confira o aplicativo Android, os SHA e o google-services.json no Firebase.",
+    );
+  }
+
+  const googleCredential = GoogleAuthProvider.credential(idToken, result.credential?.accessToken);
+  const credential = await signInWithCredential(getFirebaseAuth(), googleCredential);
+  await ensureFirebaseProfile(credential.user);
+  return credential;
 }
 
 function mapFirebaseUser(user: User): AuthenticatedUser {

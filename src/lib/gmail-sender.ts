@@ -1,11 +1,15 @@
+import { Capacitor } from "@capacitor/core";
 import {
   GoogleAuthProvider,
+  linkWithCredential,
   linkWithPopup,
+  reauthenticateWithCredential,
   reauthenticateWithPopup,
   type UserCredential,
 } from "firebase/auth";
 
-import { getCurrentUser } from "@/integrations/firebase/auth";
+import { authErrorMessage, getCurrentUser } from "@/integrations/firebase/auth";
+import { emailFromOpenIdToken } from "@/lib/mobile-native-runtime";
 
 export interface GmailConnection {
   accessToken: string;
@@ -43,6 +47,10 @@ export async function connectGmail({
 
   const user = getCurrentUser();
   if (!user) throw new Error("Sua sessão do Firebase expirou. Entre novamente.");
+
+  if (Capacitor.isNativePlatform()) {
+    return connectNativeGmail(user, authenticatedEmail);
+  }
 
   const provider = new GoogleAuthProvider();
   provider.addScope("openid");
@@ -101,6 +109,68 @@ export async function connectGmail({
   return connection;
 }
 
+async function connectNativeGmail(
+  user: NonNullable<ReturnType<typeof getCurrentUser>>,
+  authenticatedEmail: string,
+): Promise<GmailConnection> {
+  const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
+  const nativeResult = await FirebaseAuthentication.signInWithGoogle({
+    // O fluxo de autorização Gmail precisa devolver um access token para o escopo solicitado.
+    useCredentialManager: false,
+    skipNativeAuth: true,
+    scopes: ["openid", "email", "profile", GMAIL_SEND_SCOPE],
+  }).catch((error: unknown) => {
+    throw new Error(authErrorMessage(error));
+  });
+  const idToken = nativeResult.credential?.idToken;
+  const accessToken = nativeResult.credential?.accessToken;
+
+  if (!idToken || !accessToken) {
+    throw new Error(
+      "O Google não forneceu as credenciais necessárias para autorizar o Gmail no Android.",
+    );
+  }
+  const connectedEmail = normalizeEmail(emailFromOpenIdToken(idToken) ?? "");
+  if (connectedEmail !== authenticatedEmail) {
+    throw new Error(
+      `O Gmail autorizado (${connectedEmail}) não corresponde ao e-mail do professor (${authenticatedEmail}).`,
+    );
+  }
+
+  const credential = GoogleAuthProvider.credential(idToken, accessToken);
+
+  try {
+    if (user.providerData.some((item) => item.providerId === GoogleAuthProvider.PROVIDER_ID)) {
+      await reauthenticateWithCredential(user, credential);
+    } else {
+      await linkWithCredential(user, credential);
+    }
+  } catch (error) {
+    const code = readErrorCode(error);
+    if (code === "auth/provider-already-linked") {
+      await reauthenticateWithCredential(user, credential);
+    } else if (
+      code === "auth/credential-already-in-use" ||
+      code === "auth/email-already-in-use" ||
+      code === "auth/account-exists-with-different-credential"
+    ) {
+      throw new Error(
+        "Este Google já está associado a outra conta Firebase. Saia e entre diretamente com Google para autorizar o Gmail.",
+      );
+    } else {
+      throw error;
+    }
+  }
+
+  const connection: GmailConnection = {
+    accessToken,
+    email: connectedEmail,
+    expiresAt: Date.now() + TOKEN_LIFETIME_MS,
+  };
+  saveGmailConnection(connection);
+  return connection;
+}
+
 export function getSavedGmailConnection(): GmailConnection | null {
   return readGmailConnection();
 }
@@ -109,9 +179,7 @@ export function isGmailConnectionValid(
   connection: GmailConnection | null,
 ): connection is GmailConnection {
   return Boolean(
-    connection?.accessToken &&
-      connection.email &&
-      connection.expiresAt > Date.now() + 30_000,
+    connection?.accessToken && connection.email && connection.expiresAt > Date.now() + 30_000,
   );
 }
 
@@ -164,19 +232,16 @@ export async function sendPdfWithGmail(
     "",
   ].join("\r\n");
 
-  const response = await fetch(
-    "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${connection.accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        raw: toBase64Url(new TextEncoder().encode(mime)),
-      }),
+  const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${connection.accessToken}`,
+      "Content-Type": "application/json",
     },
-  );
+    body: JSON.stringify({
+      raw: toBase64Url(new TextEncoder().encode(mime)),
+    }),
+  });
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => ({}))) as {
@@ -188,9 +253,7 @@ export async function sendPdfWithGmail(
       throw new Error("A autorização do Gmail expirou ou foi recusada. Autorize novamente.");
     }
 
-    throw new Error(
-      payload.error?.message ?? `O Gmail recusou o envio (${response.status}).`,
-    );
+    throw new Error(payload.error?.message ?? `O Gmail recusou o envio (${response.status}).`);
   }
 }
 
@@ -243,9 +306,7 @@ function sanitizeFilename(value: string): string {
     .replace(/^[-.]+|[-.]+$/g, "")
     .slice(0, 120);
 
-  return sanitized.toLowerCase().endsWith(".pdf")
-    ? sanitized
-    : `${sanitized || "devolutiva"}.pdf`;
+  return sanitized.toLowerCase().endsWith(".pdf") ? sanitized : `${sanitized || "devolutiva"}.pdf`;
 }
 
 function encodeMimeHeader(value: string): string {
@@ -268,10 +329,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 function toBase64Url(bytes: Uint8Array): string {
-  return bytesToBase64(bytes)
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/g, "");
+  return bytesToBase64(bytes).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "");
 }
 
 function wrapBase64(value: string): string {

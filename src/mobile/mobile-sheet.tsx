@@ -1,12 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  Download,
   Eye,
+  ExternalLink,
   FileCheck2,
   LayoutGrid,
   Loader2,
   RectangleHorizontal,
   RectangleVertical,
+  Share2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -40,8 +43,19 @@ import {
   type AnswerSheetOrientation,
 } from "@/lib/answer-sheet-layout";
 import { restoreAnswerSheetModel } from "@/lib/answer-sheet-model";
+import {
+  renderAnswerSheetPdfBlob,
+  safeFileName,
+  triggerBlobDownload,
+} from "@/lib/answer-sheet-export";
 
 import { mobileQueryKeys } from "./mobile-query-keys";
+import {
+  isNativeMobileApp,
+  openPdfOnDevice,
+  savePdfOnDevice,
+  sharePdfOnDevice,
+} from "./native-device";
 import {
   MobileCard,
   MobileCardHeader,
@@ -370,7 +384,9 @@ export function MobileSheet({
           title="Modelos e versões"
           description="Cada configuração salva permanece disponível para conferência."
         />
-        {modelsQuery.isPending ? (
+        {!connected && modelsQuery.data === undefined ? (
+          <MobileError error="Reconecte-se para carregar os modelos salvos." />
+        ) : modelsQuery.isPending ? (
           <MobileLoading label="Carregando versões…" />
         ) : modelsQuery.isError ? (
           <MobileError error={modelsQuery.error} onRetry={() => void modelsQuery.refetch()} />
@@ -403,6 +419,33 @@ export function MobileSheet({
 }
 
 function MobileSheetPreview({ preview, onBack }: { preview: SheetPreview; onBack: () => void }) {
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const [pdfAction, setPdfAction] = useState<"open" | "save" | "share" | null>(null);
+  const native = isNativeMobileApp();
+  const fileName = `${safeFileName(preview.assessment.titulo)}-folha-de-respostas.pdf`;
+
+  async function handlePdf(action: "open" | "save" | "share") {
+    if (!sheetRef.current || pdfAction) return;
+    setPdfAction(action);
+    try {
+      const pdf = await renderAnswerSheetPdfBlob(sheetRef.current);
+      if (!native) {
+        triggerBlobDownload(pdf, fileName);
+      } else if (action === "open") {
+        await openPdfOnDevice(pdf, fileName);
+      } else if (action === "save") {
+        await savePdfOnDevice(pdf, fileName);
+        toast.success("PDF salvo na pasta Documentos/Folha.");
+      } else {
+        await sharePdfOnDevice(pdf, fileName, `Folha de respostas · ${preview.assessment.titulo}`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPdfAction(null);
+    }
+  }
+
   return (
     <MobileCard className="mobile-sheet-preview-card">
       <MobileCardHeader
@@ -421,7 +464,48 @@ function MobileSheetPreview({ preview, onBack }: { preview: SheetPreview; onBack
       <div className="mobile-scroll-hint">
         Arraste para os lados e para baixo para conferir a folha inteira.
       </div>
-      <div className="mobile-answer-sheet-viewport">
+      <div className="flex flex-wrap gap-2">
+        {native ? (
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pdfAction !== null}
+              onClick={() => void handlePdf("open")}
+            >
+              {pdfAction === "open" ? <Loader2 className="animate-spin" /> : <ExternalLink />}
+              Abrir PDF
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pdfAction !== null}
+              onClick={() => void handlePdf("save")}
+            >
+              {pdfAction === "save" ? <Loader2 className="animate-spin" /> : <Download />}
+              Salvar PDF
+            </Button>
+            <Button
+              type="button"
+              disabled={pdfAction !== null}
+              onClick={() => void handlePdf("share")}
+            >
+              {pdfAction === "share" ? <Loader2 className="animate-spin" /> : <Share2 />}
+              Compartilhar
+            </Button>
+          </>
+        ) : (
+          <Button
+            type="button"
+            disabled={pdfAction !== null}
+            onClick={() => void handlePdf("save")}
+          >
+            {pdfAction ? <Loader2 className="animate-spin" /> : <Download />}
+            Baixar PDF
+          </Button>
+        )}
+      </div>
+      <div ref={sheetRef} className="mobile-answer-sheet-viewport">
         <AnswerSheet
           avaliacao={preview.assessment}
           questoes={preview.questions}

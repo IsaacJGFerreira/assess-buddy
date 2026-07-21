@@ -125,6 +125,9 @@ export function MobileCorrection({
     );
   }
 
+  if (!connected && (studentsQuery.data === undefined || responsesQuery.data === undefined)) {
+    return <MobileError error="Reconecte-se para carregar alunos e respostas." />;
+  }
   if (studentsQuery.isPending || responsesQuery.isPending) {
     return <MobileLoading label="Carregando alunos e respostas…" />;
   }
@@ -158,7 +161,11 @@ export function MobileCorrection({
         />
         {showUpload && (
           <div className="mobile-embedded-upload">
-            <AnswerSheetUploadPanel avaliacao={assessment} alunos={students} />
+            <AnswerSheetUploadPanel
+              avaliacao={assessment}
+              alunos={students}
+              connected={connected}
+            />
           </div>
         )}
       </MobileCard>
