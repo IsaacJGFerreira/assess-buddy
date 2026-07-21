@@ -10,6 +10,8 @@ import {
   type ConnectionSnapshot,
 } from "@/lib/mobile-runtime";
 
+import { handleRestoredNativePluginResult } from "./native-device";
+
 export async function initializeMobilePlatform(): Promise<() => void> {
   if (!Capacitor.isNativePlatform()) return () => undefined;
 
@@ -40,9 +42,16 @@ export async function initializeMobilePlatform(): Promise<() => void> {
     focusManager.setFocused(isActive);
   });
 
+  const restoredResultListener = await App.addListener("appRestoredResult", (event) => {
+    void handleRestoredNativePluginResult(event).catch((error) => {
+      console.warn("Não foi possível recuperar o arquivo devolvido pelo Android.", error);
+    });
+  });
+
   return () => {
     void backButtonListener.remove();
     void appStateListener.remove();
+    void restoredResultListener.remove();
   };
 }
 

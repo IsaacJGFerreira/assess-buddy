@@ -5,6 +5,8 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 export const ANSWER_SHEET_SCAN_MAX_BYTES = 25 * 1024 * 1024;
 export const ANSWER_SHEET_SCAN_MAX_PDF_PAGES = 50;
 export const ANSWER_SHEET_SCAN_ACCEPT = ".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf";
+export const ANSWER_SHEET_PREPARED_TARGET_BYTES = 12 * 1024 * 1024;
+export const ANSWER_SHEET_PREPARED_MAX_BYTES = 19 * 1024 * 1024;
 
 export type AnswerSheetScanMime = "image/jpeg" | "image/png" | "application/pdf";
 
@@ -136,7 +138,7 @@ export async function createPreparedAnswerSheetImage(
     outputHeight,
   );
 
-  const blob = await canvasToBlob(outputCanvas);
+  const blob = await createSafelyCompressedBlob(outputCanvas);
   return { blob, width: outputWidth, height: outputHeight };
 }
 
@@ -149,12 +151,34 @@ function loadImage(source: string): Promise<HTMLImageElement> {
   });
 }
 
-function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+async function createSafelyCompressedBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  const png = await canvasToBlob(canvas, "image/png");
+  if (png.size <= ANSWER_SHEET_PREPARED_TARGET_BYTES) return png;
+
+  for (const quality of [0.94, 0.88, 0.8, 0.72]) {
+    const jpeg = await canvasToBlob(canvas, "image/jpeg", quality);
+    if (jpeg.size <= ANSWER_SHEET_PREPARED_MAX_BYTES) return jpeg;
+  }
+
+  throw new Error(
+    "A folha continuou grande demais após a compressão segura. Reduza o recorte e tente novamente.",
+  );
+}
+
+function canvasToBlob(
+  canvas: HTMLCanvasElement,
+  type: "image/png" | "image/jpeg",
+  quality?: number,
+): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error("Não foi possível gerar a imagem recortada."));
-    }, "image/png");
+    canvas.toBlob(
+      (blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("Não foi possível gerar a imagem recortada."));
+      },
+      type,
+      quality,
+    );
   });
 }
 

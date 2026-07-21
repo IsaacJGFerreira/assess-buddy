@@ -4,11 +4,15 @@ import Cropper, { type Area, type MediaSize, type Point, type Size } from "react
 import "react-easy-crop/react-easy-crop.css";
 import {
   CheckCircle2,
+  Camera,
   ChevronLeft,
   ChevronRight,
+  CloudOff,
   Crop,
   FileImage,
   FileText,
+  FolderOpen,
+  Images,
   Loader2,
   RotateCcw,
   RotateCw,
@@ -41,6 +45,16 @@ import {
   type Avaliacao,
   type DigitalizacaoFolha,
 } from "@/lib/domain";
+import { assertOnline } from "@/lib/mobile-native-runtime";
+import {
+  acquireNativeAnswerSheetImage,
+  clearPendingNativeScan,
+  isNativeMobileApp,
+  observeRestoredNativeScan,
+  openFileOnDevice,
+  persistPendingNativeScan,
+  restorePendingNativeScan,
+} from "@/mobile/native-device";
 
 type CropFormat = "original" | "a4-portrait" | "a4-landscape";
 
@@ -56,9 +70,11 @@ const STATUS_LABEL: Record<DigitalizacaoFolha["status"], string> = {
 export function AnswerSheetUploadPanel({
   avaliacao,
   alunos,
+  connected = true,
 }: {
   avaliacao: Avaliacao;
   alunos: Aluno[];
+  connected?: boolean;
 }) {
   const avaliacaoId = avaliacao.id;
   const queryClient = useQueryClient();
@@ -66,6 +82,7 @@ export function AnswerSheetUploadPanel({
   const imageObjectUrlRef = useRef<string | null>(null);
   const pdfDocumentRef = useRef<LoadedAnswerSheetPdf | null>(null);
   const pageRequestRef = useRef(0);
+  const native = isNativeMobileApp();
 
   const [file, setFile] = useState<File | null>(null);
   const [mime, setMime] = useState<AnswerSheetScanMime | null>(null);
@@ -82,10 +99,12 @@ export function AnswerSheetUploadPanel({
   const [cropFormat, setCropFormat] = useState<CropFormat>("original");
   const [sourceAspect, setSourceAspect] = useState(A4_ASPECT);
   const [activeScan, setActiveScan] = useState<DigitalizacaoFolha | null>(null);
+  const [nativeAction, setNativeAction] = useState<"camera" | "gallery" | null>(null);
 
   const scans = useQuery({
     queryKey: ["answer-sheet-scans", avaliacaoId],
     queryFn: () => listAnswerSheetScans(avaliacaoId),
+    enabled: connected,
     retry: false,
   });
 
@@ -100,23 +119,27 @@ export function AnswerSheetUploadPanel({
     }
   }, []);
 
-  const resetEditor = useCallback(() => {
-    pageRequestRef.current += 1;
-    releaseSources();
-    setFile(null);
-    setMime(null);
-    setSource(null);
-    setPageNumber(1);
-    setPageCount(1);
-    setLoadingSource(false);
-    setCrop({ x: 0, y: 0 });
-    setCropPixels(null);
-    setCropSize(null);
-    setZoom(1);
-    setRotation(0);
-    setCropFormat("original");
-    setSourceAspect(A4_ASPECT);
-  }, [releaseSources]);
+  const resetEditor = useCallback(
+    (clearPending = true) => {
+      pageRequestRef.current += 1;
+      releaseSources();
+      setFile(null);
+      setMime(null);
+      setSource(null);
+      setPageNumber(1);
+      setPageCount(1);
+      setLoadingSource(false);
+      setCrop({ x: 0, y: 0 });
+      setCropPixels(null);
+      setCropSize(null);
+      setZoom(1);
+      setRotation(0);
+      setCropFormat("original");
+      setSourceAspect(A4_ASPECT);
+      if (clearPending) void clearPendingNativeScan(avaliacaoId);
+    },
+    [avaliacaoId, releaseSources],
+  );
 
   useEffect(() => () => releaseSources(), [releaseSources]);
 
@@ -129,7 +152,7 @@ export function AnswerSheetUploadPanel({
   }, []);
 
   const selectFile = useCallback(
-    async (selectedFile: File) => {
+    async (selectedFile: File, persistForRecovery = true) => {
       releaseSources();
       pageRequestRef.current += 1;
       setSource(null);
@@ -139,6 +162,11 @@ export function AnswerSheetUploadPanel({
 
       try {
         const selectedMime = validateAnswerSheetScanFile(selectedFile);
+        if (native && persistForRecovery) {
+          await persistPendingNativeScan(avaliacaoId, selectedFile).catch((error) => {
+            console.warn("Não foi possível guardar o arquivo para recuperação.", error);
+          });
+        }
         setFile(selectedFile);
         setMime(selectedMime);
 
@@ -166,7 +194,50 @@ export function AnswerSheetUploadPanel({
         setLoadingSource(false);
       }
     },
-    [releaseSources, resetPosition],
+    [avaliacaoId, native, releaseSources, resetPosition],
+  );
+
+  useEffect(() => {
+    if (!native) return;
+
+    let disposed = false;
+    const restore = async () => {
+      const restored = await restorePendingNativeScan(avaliacaoId);
+      if (!disposed && restored) await selectFile(restored, false);
+    };
+
+    void restore().catch((error) => {
+      console.warn("Não foi possível restaurar a folha pendente.", error);
+    });
+
+    const stopObserving = observeRestoredNativeScan(avaliacaoId, () => {
+      void restore().catch((error) => {
+        toast.error(getErrorMessage(error, "Não foi possível recuperar a imagem da câmera."));
+      });
+    });
+
+    return () => {
+      disposed = true;
+      stopObserving();
+    };
+  }, [avaliacaoId, native, selectFile]);
+
+  const acquireNativeImage = useCallback(
+    async (sourceType: "camera" | "gallery") => {
+      if (!connected) {
+        toast.info("Você pode preparar a folha offline; conecte-se antes de enviar.");
+      }
+      setNativeAction(sourceType);
+      try {
+        const selectedFile = await acquireNativeAnswerSheetImage(avaliacaoId, sourceType);
+        if (selectedFile) await selectFile(selectedFile, false);
+      } catch (error) {
+        toast.error(getErrorMessage(error, "O Android não conseguiu abrir a imagem."));
+      } finally {
+        setNativeAction(null);
+      }
+    },
+    [avaliacaoId, connected, selectFile],
   );
 
   const changePdfPage = useCallback(
@@ -197,6 +268,7 @@ export function AnswerSheetUploadPanel({
       if (!file || !mime || !source || !cropPixels) {
         throw new Error("Ajuste o recorte da folha antes de salvar.");
       }
+      assertOnline(connected, "enviar a folha");
       const prepared = await createPreparedAnswerSheetImage(source, cropPixels, rotation);
       return uploadAnswerSheetScan({
         avaliacaoId,
@@ -219,7 +291,7 @@ export function AnswerSheetUploadPanel({
     },
     onSuccess: async () => {
       toast.success("Folha preparada e salva para correção.");
-      resetEditor();
+      resetEditor(true);
       await queryClient.invalidateQueries({ queryKey: ["answer-sheet-scans", avaliacaoId] });
     },
     onError: (error) => {
@@ -231,7 +303,10 @@ export function AnswerSheetUploadPanel({
   });
 
   const remove = useMutation({
-    mutationFn: deleteAnswerSheetScan,
+    mutationFn: (scan: DigitalizacaoFolha) => {
+      assertOnline(connected, "remover a folha");
+      return deleteAnswerSheetScan(scan);
+    },
     onSuccess: async () => {
       toast.success("Folha removida.");
       await queryClient.invalidateQueries({ queryKey: ["answer-sheet-scans", avaliacaoId] });
@@ -277,7 +352,7 @@ export function AnswerSheetUploadPanel({
             type="button"
             variant="ghost"
             size="sm"
-            onClick={resetEditor}
+            onClick={() => resetEditor()}
             disabled={upload.isPending}
           >
             <X className="mr-1 h-4 w-4" /> Trocar arquivo
@@ -292,38 +367,75 @@ export function AnswerSheetUploadPanel({
         </div>
       )}
 
+      {!connected && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          <CloudOff className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Sem internet. Você pode capturar e ajustar a folha; o arquivo fica guardado no aparelho
+            até a conexão voltar.
+          </span>
+        </div>
+      )}
+
       {!file ? (
-        <button
-          type="button"
-          className={`flex min-h-52 w-full flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors ${dragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/60 hover:bg-muted/30"}`}
-          onClick={() => inputRef.current?.click()}
-          onDragEnter={(event) => {
-            event.preventDefault();
-            setDragging(true);
-          }}
-          onDragOver={(event) => {
-            event.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={(event) => {
-            event.preventDefault();
-            setDragging(false);
-          }}
-          onDrop={(event) => {
-            event.preventDefault();
-            setDragging(false);
-            const droppedFile = event.dataTransfer.files[0];
-            if (droppedFile) void selectFile(droppedFile);
-          }}
-        >
-          <span className="mb-3 rounded-full bg-primary/10 p-3 text-primary">
-            <Upload className="h-6 w-6" />
-          </span>
-          <span className="font-medium">Clique ou arraste a folha até aqui</span>
-          <span className="mt-1 text-sm text-muted-foreground">
-            JPG, PNG ou PDF de até {formatBytes(ANSWER_SHEET_SCAN_MAX_BYTES)}
-          </span>
-        </button>
+        <div className="space-y-3">
+          {native && (
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                type="button"
+                className="h-12"
+                onClick={() => void acquireNativeImage("camera")}
+                disabled={nativeAction !== null}
+              >
+                {nativeAction === "camera" ? <Loader2 className="animate-spin" /> : <Camera />}
+                Câmera
+              </Button>
+              <Button
+                type="button"
+                className="h-12"
+                variant="outline"
+                onClick={() => void acquireNativeImage("gallery")}
+                disabled={nativeAction !== null}
+              >
+                {nativeAction === "gallery" ? <Loader2 className="animate-spin" /> : <Images />}
+                Galeria
+              </Button>
+            </div>
+          )}
+          <button
+            type="button"
+            className={`flex min-h-44 w-full flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-8 text-center transition-colors ${dragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/60 hover:bg-muted/30"}`}
+            onClick={() => inputRef.current?.click()}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              setDragging(true);
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={(event) => {
+              event.preventDefault();
+              setDragging(false);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragging(false);
+              const droppedFile = event.dataTransfer.files[0];
+              if (droppedFile) void selectFile(droppedFile);
+            }}
+          >
+            <span className="mb-3 rounded-full bg-primary/10 p-3 text-primary">
+              <Upload className="h-6 w-6" />
+            </span>
+            <span className="font-medium">
+              {native ? "Selecionar imagem ou PDF" : "Clique ou arraste a folha até aqui"}
+            </span>
+            <span className="mt-1 text-sm text-muted-foreground">
+              JPG, PNG ou PDF de até {formatBytes(ANSWER_SHEET_SCAN_MAX_BYTES)}
+            </span>
+          </button>
+        </div>
       ) : (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/25 px-3 py-2">
@@ -338,33 +450,51 @@ export function AnswerSheetUploadPanel({
               </span>
               <span className="text-muted-foreground">· {formatBytes(file.size)}</span>
             </div>
-            {mime === "application/pdf" && (
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => void changePdfPage(pageNumber - 1)}
-                  disabled={pageNumber <= 1 || loadingSource}
-                  aria-label="Página anterior"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <span className="min-w-28 text-center text-sm">
-                  Página {pageNumber} de {pageCount}
-                </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => void changePdfPage(pageNumber + 1)}
-                  disabled={pageNumber >= pageCount || loadingSource}
-                  aria-label="Próxima página"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
+            {(native || mime === "application/pdf") && (
+              <div className="flex flex-wrap items-center gap-1">
+                {native && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      void openFileOnDevice(file).catch((error) =>
+                        toast.error(getErrorMessage(error, "Não foi possível abrir o arquivo.")),
+                      )
+                    }
+                  >
+                    <FolderOpen className="mr-1 h-4 w-4" /> Abrir arquivo
+                  </Button>
+                )}
+                {mime === "application/pdf" && (
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => void changePdfPage(pageNumber - 1)}
+                      disabled={pageNumber <= 1 || loadingSource}
+                      aria-label="Página anterior"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="min-w-28 text-center text-sm">
+                      Página {pageNumber} de {pageCount}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => void changePdfPage(pageNumber + 1)}
+                      disabled={pageNumber >= pageCount || loadingSource}
+                      aria-label="Próxima página"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -486,7 +616,7 @@ export function AnswerSheetUploadPanel({
                   }
                   upload.mutate();
                 }}
-                disabled={!source || !cropPixels || loadingSource || upload.isPending}
+                disabled={!connected || !source || !cropPixels || loadingSource || upload.isPending}
               >
                 {upload.isPending ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -499,8 +629,8 @@ export function AnswerSheetUploadPanel({
           </div>
           <p className="text-xs text-muted-foreground">
             O quadro inicial acompanha a proporção do arquivo, inclusive folhas compactas. Arraste e
-            use o zoom apenas se algum dos quatro marcadores ficar fora dele. A imagem é convertida
-            para PNG e guardada de forma privada nesta avaliação.
+            use o zoom apenas se algum dos quatro marcadores ficar fora dele. A imagem é comprimida
+            com segurança e guardada de forma privada nesta avaliação.
           </p>
         </div>
       )}
@@ -565,6 +695,7 @@ export function AnswerSheetUploadPanel({
                         size="sm"
                         variant="outline"
                         onClick={() => setActiveScan(scan)}
+                        disabled={!connected}
                       >
                         <ScanLine className="mr-2 h-4 w-4" />
                         {scan.status === "revisao"
@@ -578,7 +709,7 @@ export function AnswerSheetUploadPanel({
                         size="icon"
                         variant="ghost"
                         className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        disabled={remove.isPending}
+                        disabled={!connected || remove.isPending}
                         onClick={() => {
                           if (window.confirm("Remover esta folha preparada?")) remove.mutate(scan);
                         }}

@@ -133,13 +133,16 @@ export async function uploadDigitalizacaoFirebase(
 
   const avaliacaoId = normalizeRequiredText(input.avaliacaoId, "Avaliação inválida.");
   const imagem = normalizeScanBlob(input.imagem);
+  const preparedMime = normalizePreparedImageMime(imagem.type);
+  const preparedExtension = preparedMime === "image/png" ? "png" : "jpg";
   const id = crypto.randomUUID();
-  const storagePath = `usuarios/${user.uid}/digitalizacoes/` + `${avaliacaoId}/${id}.png`;
+  const storagePath =
+    `usuarios/${user.uid}/digitalizacoes/` + `${avaliacaoId}/${id}.${preparedExtension}`;
 
   const storageReference = ref(getFirebaseStorage(), storagePath);
 
   await uploadBytes(storageReference, imagem, {
-    contentType: "image/png",
+    contentType: preparedMime,
     cacheControl: "private,max-age=3600",
     customMetadata: {
       avaliacaoId,
@@ -599,6 +602,11 @@ function normalizeScanBlob(imagem: Blob): Blob {
   }
 
   return imagem;
+}
+
+function normalizePreparedImageMime(mime: string): "image/jpeg" | "image/png" {
+  if (mime === "image/jpeg" || mime === "image/png") return mime;
+  throw new Error("A imagem preparada deve estar em JPG ou PNG.");
 }
 
 function normalizeMimeOriginal(mime: string): FirebaseMimeDigitalizacao {

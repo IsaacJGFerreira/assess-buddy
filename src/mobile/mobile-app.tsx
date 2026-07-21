@@ -10,6 +10,7 @@ import {
   authErrorMessage,
   observeAuthState,
   signInWithEmail,
+  signInWithGoogle,
   signOut,
   signUpWithEmail,
   type User,
@@ -85,6 +86,23 @@ function AuthenticationScreen({ connected }: { connected: boolean }) {
       } else {
         await signInWithEmail(email, password);
       }
+    } catch (nextError) {
+      setError(authErrorMessage(nextError));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function enterWithGoogle() {
+    if (!connected) {
+      setError("Conecte-se à internet para entrar com Google.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      await signInWithGoogle();
     } catch (nextError) {
       setError(authErrorMessage(nextError));
     } finally {
@@ -202,6 +220,20 @@ function AuthenticationScreen({ connected }: { connected: boolean }) {
             </Button>
           </form>
 
+          <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="h-px flex-1 bg-border" /> ou <span className="h-px flex-1 bg-border" />
+          </div>
+          <Button
+            type="button"
+            className="h-11 w-full"
+            variant="outline"
+            disabled={submitting || !connected}
+            onClick={() => void enterWithGoogle()}
+          >
+            {submitting ? <Loader2 className="animate-spin" /> : <GoogleMark />}
+            Entrar com Google
+          </Button>
+
           <div className="mt-5 flex items-start gap-2 rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
             <p>
@@ -212,6 +244,17 @@ function AuthenticationScreen({ connected }: { connected: boolean }) {
         </section>
       </div>
     </main>
+  );
+}
+
+function GoogleMark() {
+  return (
+    <span
+      aria-hidden="true"
+      className="grid h-5 w-5 place-items-center rounded-full border border-border bg-background text-xs font-bold text-foreground"
+    >
+      G
+    </span>
   );
 }
 

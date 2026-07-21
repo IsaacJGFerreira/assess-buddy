@@ -80,29 +80,33 @@ export function MobileAssessmentDetail({
     enabled: connected,
   });
 
-  if (!connected) {
+  const assessment = assessmentQuery.data;
+  const questions = questionsQuery.data;
+  const hasCachedAssessment = Boolean(assessment) && questions !== undefined;
+
+  if (!connected && !hasCachedAssessment) {
     return (
       <MobilePage title="Avaliação">
         <MobileError error="Reconecte-se para carregar a avaliação." />
       </MobilePage>
     );
   }
-  if (assessmentQuery.isPending || questionsQuery.isPending) {
+  if (!hasCachedAssessment && (assessmentQuery.isPending || questionsQuery.isPending)) {
     return <MobileLoading label="Carregando avaliação…" />;
   }
-  if (assessmentQuery.isError) {
+  if (!assessment && assessmentQuery.isError) {
     return (
       <MobileError error={assessmentQuery.error} onRetry={() => void assessmentQuery.refetch()} />
     );
   }
-  if (questionsQuery.isError) {
+  if (questions === undefined && questionsQuery.isError) {
     return (
       <MobileError error={questionsQuery.error} onRetry={() => void questionsQuery.refetch()} />
     );
   }
-
-  const assessment = assessmentQuery.data;
-  const questions = questionsQuery.data ?? [];
+  if (!assessment || questions === undefined) {
+    return <MobileError error="Não foi possível carregar a avaliação." />;
+  }
 
   return (
     <MobilePage
