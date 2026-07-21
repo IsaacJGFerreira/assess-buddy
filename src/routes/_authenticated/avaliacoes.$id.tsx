@@ -1,6 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getDownloadURL, ref } from "firebase/storage";
 import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import {
   ArrowDown,
@@ -46,7 +45,6 @@ import {
   STATUS_LABEL,
   TIPO_LABEL,
   alternativas,
-  calcularNotaAluno,
   corrigirQuestao,
   createOrGetAnswerSheet,
   createQuestoes,
@@ -69,6 +67,7 @@ import {
   type StatusAvaliacao,
   type TipoQuestao,
 } from "@/lib/domain";
+import { buildAssessmentReport } from "@/lib/assessment-report";
 import { batchExportAnswerSheetsAsZip } from "@/lib/answer-sheet-batch";
 import { exportAnswerSheetAsPdf, exportAnswerSheetAsPng } from "@/lib/answer-sheet-export";
 import { restoreAnswerSheetModel } from "@/lib/answer-sheet-model";
@@ -87,10 +86,9 @@ import {
   type AnswerSheetIdentificationMode,
 } from "@/lib/answer-sheet-identification";
 import { getCurrentUser } from "@/integrations/firebase/auth";
-import { getFirebaseStorage } from "@/integrations/firebase/client";
+import { prepareFeedbackQuestions } from "@/lib/feedback-preparation";
 import {
   generateFeedbackPdf,
-  type FeedbackQuestion,
   type FeedbackResponse,
 } from "@/lib/devolutiva-pdf";
 import {
@@ -1494,7 +1492,7 @@ function DevolutivaTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId:
         questoesQuery.data ?? listQuestoes(avaliacaoId),
         respostasQuery.data ?? listRespostasByAvaliacao(avaliacaoId),
       ]);
-      const preparedQuestions = await prepareFeedbackQuestionImages(questions);
+      const preparedQuestions = await prepareFeedbackQuestions(questions);
       const classResponses = responses.map((response): FeedbackResponse => ({
         aluno_id: response.aluno_id,
         questao_id: response.questao_id,
@@ -1815,25 +1813,6 @@ function deliveryStatusLabel(status: FeedbackDeliveryStatus): string {
   return "Na fila";
 }
 
-async function prepareFeedbackQuestionImages(questions: Questao[]): Promise<FeedbackQuestion[]> {
-  const storage = getFirebaseStorage();
-  return Promise.all(
-    questions.map(async (question) => {
-      const path = question.resposta_modelo_imagem_path;
-      if (!path) return question;
-
-      try {
-        return {
-          ...question,
-          resposta_modelo_imagem_url: await getDownloadURL(ref(storage, path)),
-        };
-      } catch {
-        return { ...question, resposta_modelo_imagem_url: null };
-      }
-    }),
-  );
-}
-
 function allowProgressPaint(): Promise<void> {
   return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
 }
@@ -1859,29 +1838,15 @@ function RelatorioTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: 
 
   if (!questoesQuery.data?.length || !alunosQuery.data?.length) return <p className="text-muted-foreground">Cadastre questões e alunos.</p>;
 
-  const notas = alunosQuery.data.map((aluno) => ({ aluno, ...calcularNotaAluno(questoesQuery.data, (respostasQuery.data ?? []).filter((resposta) => resposta.aluno_id === aluno.id)) }));
-  const values = notas.map((item) => item.nota).sort((a, b) => a - b);
-  const media = values.reduce((sum, value) => sum + value, 0) / values.length;
-  const middle = Math.floor(values.length / 2);
-  const mediana = values.length % 2 ? values[middle] : (values[middle - 1] + values[middle]) / 2;
-  const aproveitamento = questoesQuery.data.map((questao) => {
-    let correct = 0; let total = 0;
-    for (const aluno of alunosQuery.data) {
-      const response = respostasQuery.data?.find((item) => item.aluno_id === aluno.id && item.questao_id === questao.id);
-      if (!response?.resposta) continue;
-      total += 1;
-      if (corrigirQuestao(questao, response.resposta).situacao === "correta") correct += 1;
-    }
-    return { questao, correct, total, percent: total ? Math.round((correct / total) * 100) : 0 };
-  });
+  const report = buildAssessmentReport(questoesQuery.data, alunosQuery.data, respostasQuery.data ?? []);
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Média" value={media.toFixed(2)} />
-        <Stat label="Mediana" value={mediana.toFixed(2)} />
-        <Stat label="Maior" value={(values.at(-1) ?? 0).toFixed(2)} />
-        <Stat label="Menor" value={(values[0] ?? 0).toFixed(2)} />
+        <Stat label="Média" value={report.summary.average.toFixed(2)} />
+        <Stat label="Mediana" value={report.summary.median.toFixed(2)} />
+        <Stat label="Maior" value={report.summary.highest.toFixed(2)} />
+        <Stat label="Menor" value={report.summary.lowest.toFixed(2)} />
       </div>
       <div className="overflow-hidden rounded-lg border border-border bg-card">
         <div className="border-b border-border px-4 py-3 font-semibold">Notas por aluno</div>
@@ -1896,7 +1861,7 @@ function RelatorioTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: 
             </tr>
           </thead>
           <tbody>
-            {notas.map((item) => (
+            {report.studentResults.map((item) => (
               <tr key={item.aluno.id} className="border-t border-border">
                 <td className="px-4 py-2">{item.aluno.nome}</td>
                 <td className="px-4 py-2 font-semibold">{item.nota.toFixed(2)}</td>
@@ -1922,7 +1887,7 @@ function RelatorioTab({ avaliacaoId, turmaId }: { avaliacaoId: string; turmaId: 
             </tr>
           </thead>
           <tbody>
-            {aproveitamento.map(({ questao, correct, total, percent }) => (
+            {report.questionResults.map(({ questao, correct, total, percent }) => (
               <tr key={questao.id} className="border-t border-border">
                 <td className="px-4 py-2 font-medium">{questao.numero}</td>
                 <td className="px-4 py-2">{questao.conteudo ?? "—"}</td>

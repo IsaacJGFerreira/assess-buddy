@@ -1,8 +1,9 @@
 # Folha para Android
 
-Esta primeira etapa adiciona um aplicativo Android instalável ao mesmo repositório da aplicação
-web. O Android usa o identificador `br.com.fazendofisica.folha`, o nome **Folha** e o mesmo Firebase
-Authentication, Data Connect e Firebase Storage já usados pela web.
+O aplicativo Android instalável vive no mesmo repositório da aplicação web. Ele usa o identificador
+`br.com.fazendofisica.folha`, o nome **Folha** e o mesmo Firebase Authentication, Data Connect e
+Firebase Storage já usados pela web. A segunda etapa da Missão Android acrescenta paridade para as
+funções principais sem transformar as páginas desktop em um WebView reduzido.
 
 ## Arquitetura
 
@@ -16,16 +17,39 @@ A aplicação web continua sendo construída por TanStack Start, com SSR e a ent
 5. o WebView Android abre os arquivos empacotados no APK, sem `server.url` e sem apontar para uma URL
    remota.
 
-O shell móvel reutiliza os componentes de interface, os tipos e as integrações Firebase existentes.
-O login chama as mesmas funções de `src/integrations/firebase/auth.ts`; a listagem e a criação de
-turmas chamam diretamente `src/integrations/firebase/academic-data.ts`. Não existe uma tabela local,
-uma API móvel ou um segundo backend.
+O shell móvel reutiliza os tipos, as integrações Firebase e as regras de domínio existentes. O login
+chama as mesmas funções de `src/integrations/firebase/auth.ts`; turmas, alunos, avaliações, questões,
+folhas, correções e devolutivas usam os mesmos módulos de dados da web. Relatórios, importação de
+alunos e preparação de devolutivas foram extraídos para módulos compartilhados. Não existe uma
+tabela local, uma API móvel ou um segundo backend.
 
 A sessão do Firebase Authentication usa IndexedDB e recua para `localStorage` quando necessário. O
 estado sobrevive ao encerramento e à reabertura do aplicativo até que o usuário toque em **Sair**.
 O plugin Network atualiza os estados online/offline e pausa consultas enquanto não há conexão. A
 barra de status fica integrada ao layout, os recuos de área segura usam `safe-area-inset-*` e o botão
-voltar retorna no histórico ou minimiza o aplicativo quando não existe uma tela anterior.
+voltar retorna no histórico ou minimiza o aplicativo quando não existe uma tela anterior. Quando o
+Android volta ao primeiro plano, as consultas ativas são revalidadas para trazer alterações feitas
+na versão web.
+
+## Funções disponíveis no Android
+
+- autenticação por e-mail e senha e persistência da sessão;
+- painel com atalhos, totais e atividade recente;
+- criação, edição e exclusão de turmas e alunos, inclusive importação CSV comum;
+- criação, edição e exclusão de avaliações;
+- questões de múltipla escolha, certo ou errado, numéricas e discursivas;
+- reordenação, duplicação, anulação e exclusão de questões;
+- configuração da matrícula e do layout da folha de respostas;
+- visualização da folha, modelos salvos e histórico de versões;
+- upload comum de JPG, PNG e PDF, correção manual e notas discursivas;
+- relatórios, configuração de comentários e geração de devolutivas em PDF;
+- exclusões em cascata por meio dos mesmos serviços compartilhados;
+- atualização dos mesmos registros entre Android e web.
+
+A navegação usa cabeçalho compacto e barra inferior. Tabelas largas foram substituídas por cartões,
+listas e seletores horizontalmente roláveis. Os controles possuem alvo mínimo de 48 px, formulários
+usam texto de 16 px e a barra inferior desaparece quando o teclado reduz a altura útil. Os perfis de
+360, 390, 412 e 430 px são cobertos pelos testes de responsividade.
 
 ## Prova de sincronização
 
@@ -45,8 +69,8 @@ também mostra o ID como referência técnica da verificação.
 
 - Node.js 22 ou mais recente;
 - npm;
-- JDK 17;
-- Android Studio com Android SDK e Platform Tools;
+- JDK 21, preferencialmente o JDK embutido no Android Studio;
+- Android Studio 2025.2.1 ou mais recente, com Android SDK e Platform Tools;
 - um emulador configurado ou um aparelho com depuração USB para instalar o build.
 
 ## Configuração do Firebase
@@ -65,8 +89,8 @@ baixe esse arquivo no Firebase Console, coloque-o manualmente em `android/app/go
 e mantenha-o fora do Git.
 
 No Firebase Console, confirme que o provedor **E-mail/senha** está habilitado. Se App Check estiver
-em modo obrigatório, registre o pacote Android `br.com.fazendofisica.folha` e configure o provedor
-definido para o projeto antes do teste em aparelho.
+em modo obrigatório, a aplicação precisa inicializar o App Check para o SDK JavaScript usado dentro
+do Capacitor; registrar somente o pacote Android não autoriza essas requisições.
 
 ## Comandos
 
@@ -127,6 +151,11 @@ Sempre execute `npm run mobile:sync` depois de alterar TypeScript, CSS, HTML, co
 Capacitor ou plugins. Não edite os arquivos copiados em `android/app/src/main/assets/public`, pois
 eles são gerados novamente a cada sincronização.
 
+Para a validação manual de responsividade, use emuladores ou perfis redimensionáveis próximos de
+360, 390, 412 e 430 px. Em cada largura, percorra **Painel**, **Turmas** e todas as seções de uma
+avaliação; abra um formulário e o teclado, role a folha de respostas e confirme que nenhum botão,
+diálogo ou campo fica inacessível.
+
 ## Segurança e arquivos locais
 
 O `.gitignore` protege sobrescritas locais de ambiente, `local.properties`, `google-services.json`,
@@ -140,12 +169,14 @@ O Android também bloqueia tráfego HTTP em texto aberto e desativa backup do ap
 alias e senhas de release devem ficar no gerenciador de segredos da CI ou na máquina responsável
 pela assinatura, nunca no repositório.
 
-## Limites desta primeira etapa
+## Limites desta etapa
 
 - Login e cadastro móveis cobrem e-mail/senha; o login Google da web não foi levado para o shell
   Android neste PR.
-- O mesmo Firebase Storage está configurado e disponível aos módulos compartilhados, mas captura
-  por câmera e envio de folhas fazem parte do segundo PR da missão.
+- Upload comum pelo seletor de arquivos continua disponível. Câmera, galeria e compartilhamento
+  nativo permanecem para os próximos PRs.
+- A devolutiva pode ser configurada, gerada e baixada. Envio pelo Gmail nativo aguarda a futura
+  integração Google Android.
 - A comprovação ao vivo exige variáveis Firebase válidas e uma conta de teste; elas não são
   versionadas.
 - Ícones e splash atuais são os iniciais do Capacitor. A identidade final e a assinatura de release

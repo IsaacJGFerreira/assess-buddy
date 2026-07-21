@@ -2,6 +2,7 @@ import { App } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
 import { Network } from "@capacitor/network";
 import { StatusBar, Style } from "@capacitor/status-bar";
+import { focusManager } from "@tanstack/react-query";
 
 import {
   normalizeConnectionSnapshot,
@@ -35,8 +36,13 @@ export async function initializeMobilePlatform(): Promise<() => void> {
     await App.minimizeApp();
   });
 
+  const appStateListener = await App.addListener("appStateChange", ({ isActive }) => {
+    focusManager.setFocused(isActive);
+  });
+
   return () => {
     void backButtonListener.remove();
+    void appStateListener.remove();
   };
 }
 

@@ -17,8 +17,13 @@ export function MobileBootstrap() {
 
     void Promise.all([configurePersistentAuth(), initializeMobilePlatform()])
       .then(([, cleanup]) => {
+        if (disposed) {
+          cleanup();
+          return;
+        }
+
         cleanupPlatform = cleanup;
-        if (!disposed) setState({ status: "ready" });
+        setState({ status: "ready" });
       })
       .catch((error: unknown) => {
         if (!disposed) {

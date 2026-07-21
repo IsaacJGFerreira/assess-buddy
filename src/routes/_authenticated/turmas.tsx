@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2, Plus, Upload, Trash2 } from "lucide-react";
-import Papa from "papaparse";
+import { isValidEmail, parseStudentCsvFile, validateStudentFields } from "@/lib/student-import";
 
 export const Route = createFileRoute("/_authenticated/turmas")({
   component: TurmasPage,
@@ -214,7 +214,7 @@ function AlunosPanel({ turmaId }: { turmaId: string }) {
 
   const addAluno = useMutation({
     mutationFn: async () => {
-      validateStudent({ nome, matricula, email });
+      validateStudentFields({ nome, matricula, email });
       return criarAlunoFirebase({
         turmaId,
         nome,
@@ -272,45 +272,7 @@ function AlunosPanel({ turmaId }: { turmaId: string }) {
     setImporting(true);
 
     try {
-      const parsed = await parseCsv(file);
-      const invalidEnrollmentRows = parsed.flatMap((row, index) => {
-        const value = csvMatricula(row);
-        return value && !/^\d+$/.test(value) ? [index + 2] : [];
-      });
-
-      if (invalidEnrollmentRows.length > 0) {
-        throw new Error(
-          `Matrícula inválida nas linhas ${invalidEnrollmentRows.slice(0, 5).join(", ")}${
-            invalidEnrollmentRows.length > 5 ? "…" : ""
-          }. Use somente números.`,
-        );
-      }
-
-      const invalidEmailRows = parsed.flatMap((row, index) => {
-        const value = csvEmail(row);
-        return value && !isValidEmail(value) ? [index + 2] : [];
-      });
-
-      if (invalidEmailRows.length > 0) {
-        throw new Error(
-          `E-mail inválido nas linhas ${invalidEmailRows.slice(0, 5).join(", ")}${
-            invalidEmailRows.length > 5 ? "…" : ""
-          }.`,
-        );
-      }
-
-      const rows = parsed
-        .map((row) => ({
-          turmaId,
-          nome: csvNome(row),
-          matricula: csvMatricula(row) || null,
-          email: csvEmail(row).toLowerCase() || null,
-        }))
-        .filter((row) => row.nome);
-
-      if (!rows.length) {
-        throw new Error("Nenhuma linha válida. A coluna 'nome' é obrigatória.");
-      }
+      const rows = await parseStudentCsvFile(file, turmaId);
 
       await criarAlunosFirebase(rows);
       await refreshStudents();
@@ -464,51 +426,6 @@ function AlunosPanel({ turmaId }: { turmaId: string }) {
       )}
     </div>
   );
-}
-
-function validateStudent({
-  nome,
-  matricula,
-  email,
-}: {
-  nome: string;
-  matricula: string;
-  email: string;
-}) {
-  if (!nome.trim()) throw new Error("Informe o nome do aluno.");
-  if (matricula && !/^\d+$/.test(matricula)) {
-    throw new Error("A matrícula deve conter somente números.");
-  }
-  if (email && !isValidEmail(email)) {
-    throw new Error("Informe um e-mail válido para o aluno.");
-  }
-}
-
-function parseCsv(file: File): Promise<Record<string, string>[]> {
-  return new Promise((resolve, reject) => {
-    Papa.parse<Record<string, string>>(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (result) => resolve(result.data),
-      error: (error) => reject(error),
-    });
-  });
-}
-
-function csvNome(row: Record<string, string>): string {
-  return (row.nome || row.Nome || row.NOME || "").trim();
-}
-
-function csvMatricula(row: Record<string, string>): string {
-  return (row.matricula || row.Matricula || row.MATRICULA || "").trim();
-}
-
-function csvEmail(row: Record<string, string>): string {
-  return (row.email || row.Email || row.EMAIL || row.e_mail || "").trim();
-}
-
-function isValidEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
 function message(error: unknown): string {
