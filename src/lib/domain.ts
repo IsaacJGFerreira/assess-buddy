@@ -579,53 +579,7 @@ export async function confirmAnswerSheetScanReading({
   });
 }
 
-export type Situacao = "correta" | "incorreta" | "branco" | "anulada";
-
-export function corrigirQuestao(
-  q: Questao,
-  resposta: string | null | undefined,
-): { situacao: Situacao; pontos: number } {
-  if (q.anulada) return { situacao: "anulada", pontos: Number(q.valor) };
-  if (q.tipo === "disc") return { situacao: "branco", pontos: 0 };
-  const r = (resposta ?? "").trim();
-  if (!r) return { situacao: "branco", pontos: 0 };
-  const gab = (q.gabarito ?? "").trim().toUpperCase();
-  const ans = r.toUpperCase();
-  if (!gab) return { situacao: "incorreta", pontos: 0 };
-  return ans === gab
-    ? { situacao: "correta", pontos: Number(q.valor) }
-    : { situacao: "incorreta", pontos: -Number(q.desconto_erro ?? 0) };
-}
-
-export function calcularNotaAluno(
-  questoes: Questao[],
-  respostas: Resposta[],
-): { nota: number; acertos: number; erros: number; branco: number; anuladas: number } {
-  const byQ = new Map(respostas.map((r) => [r.questao_id, r.resposta]));
-  let nota = 0;
-  let acertos = 0;
-  let erros = 0;
-  let branco = 0;
-  let anuladas = 0;
-
-  for (const q of questoes) {
-    const { situacao, pontos } = corrigirQuestao(q, byQ.get(q.id));
-    nota += pontos;
-    if (situacao === "correta") acertos += 1;
-    else if (situacao === "incorreta") erros += 1;
-    else if (situacao === "branco") branco += 1;
-    else anuladas += 1;
-  }
-
-  return {
-    nota: Math.round(nota * 100) / 100,
-    acertos,
-    erros,
-    branco,
-    anuladas,
-  };
-}
-
+export { calcularNotaAluno, corrigirQuestao, type Situacao } from "@/lib/assessment-grading";
 export { alternativas } from "@/lib/question-options";
 
 function mapAvaliacao(value: RuntimeAvaliacao): Avaliacao {
